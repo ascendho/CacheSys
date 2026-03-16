@@ -1,8 +1,7 @@
 /*
- * cd /Users/ascendho/Downloads/project/CacheSys
- * cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
- * cmake --build build --target cache_trace_compare
- * ./build/trace/cache_trace_compare
+ * 1. cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+ * 2. cmake --build build --target cache_trace_compare
+ * 3. ./build/trace/cache_trace_compare
  *
  */
 

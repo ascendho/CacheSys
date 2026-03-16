@@ -6,6 +6,11 @@ CacheSys/
 │   ├── CachePolicy.h
 │   ├── LruCache.h
 │   └── LfuCache.h
+│   ├── ArcCache.h
+│   └── detail/
+│       ├── ArcCacheNode.h
+│       ├── ArcLruPart.h
+│       └── ArcLfuPart.h
 ├── benchmark/
 │   ├── CMakeLists.txt
 │   └── cache_benchmark.cpp
@@ -18,6 +23,11 @@ CacheSys/
 ├── src/
 │   ├── LruCache.tpp
 │   └── LfuCache.tpp
+│   ├── ArcCache.tpp
+│   └── detail/
+│       ├── ArcCacheNode.tpp
+│       ├── ArcLruPart.tpp
+│       └── ArcLfuPart.tpp
 └── README.md
 ```
 
@@ -57,6 +67,19 @@ cmake --build build --target cache_trace_compare
 ```bash
 ./build/trace/cache_trace_compare --trace-file=trace.txt --capacities=64,128,256
 ```
+
+场景化命中率测试（参考传统缓存实验输出风格，仅对比 LRU/LFU）：
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --target cache_policy_scenarios
+./build/trace/cache_policy_scenarios
+```
+
+说明：
+
+- `benchmark/` 主要用于测实现性能（ns/op、吞吐等）。
+- `trace/` 主要用于测策略效果（命中率、miss ratio、相对OPT差距）。
 
 ## FIFO
 
