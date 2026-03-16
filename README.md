@@ -1,3 +1,63 @@
+## 项目结构（重构后）
+
+```text
+CacheSys/
+├── include/
+│   ├── CachePolicy.h
+│   ├── LruCache.h
+│   └── LfuCache.h
+├── benchmark/
+│   ├── CMakeLists.txt
+│   └── cache_benchmark.cpp
+├── trace/
+│   ├── CMakeLists.txt
+│   └── trace_compare.cpp
+├── test/
+│   ├── CMakeLists.txt
+│   └── lru_lfu_test.cpp
+├── src/
+│   ├── LruCache.tpp
+│   └── LfuCache.tpp
+└── README.md
+```
+
+说明：
+
+- `include/` 只放对外头文件（声明）。
+- `src/` 放模板实现细节（`.tpp`），由头文件在末尾 `#include` 进来。
+- `test/` 放 GTest 单元测试。
+- `benchmark/` 放 Google Benchmark 性能基准。
+- `trace/` 放离线 trace-driven 对比工具（OPT/LRU/LFU miss ratio）。
+- 使用时请把 `include/` 加入编译器头文件搜索路径（如 `-Iinclude`）。
+
+## Benchmark 运行
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --target cache_benchmarks
+./build/benchmark/cache_benchmarks --benchmark_min_time=1s
+```
+
+只跑某些 case：
+
+```bash
+./build/benchmark/cache_benchmarks --benchmark_filter='BM_(Lru|Lfu)_(MixedOps|HotSetGets)'
+```
+
+## Trace-Driven 对比运行
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --target cache_trace_compare
+./build/trace/cache_trace_compare
+```
+
+使用自定义 trace 文件（纯整数序列，空格或换行分隔）：
+
+```bash
+./build/trace/cache_trace_compare --trace-file=trace.txt --capacities=64,128,256
+```
+
 ## FIFO
 
 1. 关键问题：Belady 异常
