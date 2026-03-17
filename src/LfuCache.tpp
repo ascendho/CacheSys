@@ -4,15 +4,20 @@
 
 namespace CacheSys
 {
+    // ===== FreqList::Node =====
+
     template <typename Key, typename Value>
     FreqList<Key, Value>::Node::Node() : freq(1), next(nullptr) {}
 
     template <typename Key, typename Value>
     FreqList<Key, Value>::Node::Node(Key key, Value value) : freq(1), key(key), value(value), next(nullptr) {}
 
+    // ===== FreqList =====
+
     template <typename Key, typename Value>
     FreqList<Key, Value>::FreqList(int n) : freq_(n)
     {
+        // 哨兵头尾节点，简化插入/删除边界处理。
         head_ = std::make_shared<Node>();
         tail_ = std::make_shared<Node>();
         head_->next = tail_;
@@ -33,6 +38,7 @@ namespace CacheSys
             return;
         }
 
+        // 插入到桶尾，表示同频率下较新访问。
         node->pre = tail_->pre;
         node->next = tail_;
 
@@ -72,8 +78,11 @@ namespace CacheSys
     template <typename Key, typename Value>
     typename FreqList<Key, Value>::NodePtr FreqList<Key, Value>::getFirstNode() const
     {
+        // 返回桶内最老节点（用于同频率淘汰）。
         return head_->next;
     }
+
+    // ===== LfuCache =====
 
     template <typename Key, typename Value>
     LfuCache<Key, Value>::LfuCache(int capacity, int maxAverageNum)
@@ -94,6 +103,7 @@ namespace CacheSys
     template <typename Key, typename Value>
     void LfuCache<Key, Value>::put(Key key, Value value)
     {
+        // 容量非法时直接忽略写入。
         if (capacity_ <= 0)
         {
             return;
@@ -103,11 +113,13 @@ namespace CacheSys
         auto it = nodeMap_.find(key);
         if (it != nodeMap_.end())
         {
+            // 已存在：更新值并按命中路径提升频率。
             it->second->value = value;
             getInternal(it->second, value);
             return;
         }
 
+        // 新 key：走插入路径。
         putInternal(key, value);
     }
 
@@ -118,12 +130,13 @@ namespace CacheSys
         auto it = nodeMap_.find(key);
         if (it == nodeMap_.end())
         {
-            ++misses_;
+            ++this->misses_;
             return false;
         }
 
+        // 命中后要更新频率桶位置。
         getInternal(it->second, value);
-        ++hits_;
+        ++this->hits_;
         return true;
     }
 
@@ -131,13 +144,14 @@ namespace CacheSys
     Value LfuCache<Key, Value>::get(Key key)
     {
         Value value{};
-        get(key, value);
+        this->get(key, value);
         return value;
     }
 
     template <typename Key, typename Value>
     void LfuCache<Key, Value>::purge()
     {
+        // 清空节点映射和频率桶，并重置统计辅助值。
         std::lock_guard<std::mutex> lock(mutex_);
         nodeMap_.clear();
         clearFreqLists();
@@ -151,19 +165,22 @@ namespace CacheSys
     {
         if (nodeMap_.size() >= static_cast<size_t>(capacity_))
         {
-            kickOut();
+            // 满容量先淘汰。
+            evictOneEntry();
         }
 
         NodePtr node = std::make_shared<Node>(key, value);
         nodeMap_[key] = node;
         addToFreqList(node);
         addFreqNum();
+        // 新插入节点频率固定从 1 开始。
         minFreq_ = std::min(minFreq_, 1);
     }
 
     template <typename Key, typename Value>
     void LfuCache<Key, Value>::getInternal(NodePtr node, Value &value)
     {
+        // 读取并执行频率提升：旧桶删除 -> freq+1 -> 新桶插入。
         value = node->value;
         removeFromFreqList(node);
         node->freq++;
@@ -179,8 +196,9 @@ namespace CacheSys
     }
 
     template <typename Key, typename Value>
-    void LfuCache<Key, Value>::kickOut()
+    void LfuCache<Key, Value>::evictOneEntry()
     {
+        // 从当前最小频率桶中淘汰一个节点。
         auto it = freqToFreqList_.find(minFreq_);
         if (it == freqToFreqList_.end() || !it->second || it->second->isEmpty())
         {
@@ -196,7 +214,7 @@ namespace CacheSys
         removeFromFreqList(node);
         nodeMap_.erase(node->key);
         decreaseFreqNum(node->freq);
-        ++evictions_;
+        ++this->evictions_;
     }
 
     template <typename Key, typename Value>
@@ -228,6 +246,7 @@ namespace CacheSys
         auto freqIt = freqToFreqList_.find(freq);
         if (freqIt == freqToFreqList_.end())
         {
+            // 首次出现该频率时动态创建桶。
             freqToFreqList_[freq] = new FreqList<Key, Value>(freq);
         }
 
@@ -237,6 +256,7 @@ namespace CacheSys
     template <typename Key, typename Value>
     void LfuCache<Key, Value>::addFreqNum()
     {
+        // curTotalNum_ 近似描述全局频率规模，用于触发衰减。
         curTotalNum_++;
         if (nodeMap_.empty())
         {
@@ -249,7 +269,7 @@ namespace CacheSys
 
         if (curAverageNum_ > maxAverageNum_)
         {
-            HandleOverMaxAverageNum();
+            handleFrequencyOverflow();
         }
     }
 
@@ -273,8 +293,9 @@ namespace CacheSys
     }
 
     template <typename Key, typename Value>
-    void LfuCache<Key, Value>::HandleOverMaxAverageNum()
+    void LfuCache<Key, Value>::handleFrequencyOverflow()
     {
+        // 频率衰减：防止长期热点频率无限增长造成“历史绑架”。
         if (nodeMap_.empty())
         {
             return;
@@ -321,6 +342,7 @@ namespace CacheSys
     template <typename Key, typename Value>
     void LfuCache<Key, Value>::updateMinFreq()
     {
+        // 重新扫描所有非空桶，找到新的最小频率。
         minFreq_ = std::numeric_limits<int>::max();
         for (const auto &pair : freqToFreqList_)
         {
@@ -339,6 +361,7 @@ namespace CacheSys
     template <typename Key, typename Value>
     void LfuCache<Key, Value>::clearFreqLists()
     {
+        // 释放通过 new 创建的频率桶，避免内存泄漏。
         for (auto &pair : freqToFreqList_)
         {
             delete pair.second;
@@ -347,8 +370,10 @@ namespace CacheSys
         freqToFreqList_.clear();
     }
 
+    // ===== ShardedLfuCache =====
+
     template <typename Key, typename Value>
-    HashLfuCache<Key, Value>::HashLfuCache(size_t capacity, int sliceNum, int maxAverageNum)
+    ShardedLfuCache<Key, Value>::ShardedLfuCache(size_t capacity, int sliceNum, int maxAverageNum)
         : capacity_(capacity),
           sliceNum_(sliceNum > 0 ? sliceNum : static_cast<int>(std::thread::hardware_concurrency()))
     {
@@ -357,6 +382,7 @@ namespace CacheSys
             sliceNum_ = 1;
         }
 
+        // 将总容量均匀拆分给各分片。
         size_t sliceSize = static_cast<size_t>(std::ceil(capacity_ / static_cast<double>(sliceNum_)));
         for (int i = 0; i < sliceNum_; ++i)
         {
@@ -365,21 +391,22 @@ namespace CacheSys
     }
 
     template <typename Key, typename Value>
-    void HashLfuCache<Key, Value>::put(Key key, Value value)
+    void ShardedLfuCache<Key, Value>::put(Key key, Value value)
     {
-        size_t sliceIndex = Hash(key) % static_cast<size_t>(sliceNum_);
+        // 通过哈希路由到目标分片。
+        size_t sliceIndex = hashKey(key) % static_cast<size_t>(sliceNum_);
         lfuSliceCaches_[sliceIndex]->put(key, value);
     }
 
     template <typename Key, typename Value>
-    bool HashLfuCache<Key, Value>::get(Key key, Value &value)
+    bool ShardedLfuCache<Key, Value>::get(Key key, Value &value)
     {
-        size_t sliceIndex = Hash(key) % static_cast<size_t>(sliceNum_);
+        size_t sliceIndex = hashKey(key) % static_cast<size_t>(sliceNum_);
         return lfuSliceCaches_[sliceIndex]->get(key, value);
     }
 
     template <typename Key, typename Value>
-    Value HashLfuCache<Key, Value>::get(Key key)
+    Value ShardedLfuCache<Key, Value>::get(Key key)
     {
         Value value{};
         get(key, value);
@@ -387,7 +414,7 @@ namespace CacheSys
     }
 
     template <typename Key, typename Value>
-    void HashLfuCache<Key, Value>::purge()
+    void ShardedLfuCache<Key, Value>::purge()
     {
         for (auto &lfuSliceCache : lfuSliceCaches_)
         {
@@ -396,7 +423,7 @@ namespace CacheSys
     }
 
     template <typename Key, typename Value>
-    size_t HashLfuCache<Key, Value>::Hash(Key key)
+    size_t ShardedLfuCache<Key, Value>::hashKey(const Key &key) const
     {
         std::hash<Key> hashFunc;
         return hashFunc(key);

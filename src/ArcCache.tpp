@@ -16,9 +16,9 @@ namespace CacheSys
     template <typename Key, typename Value>
     void ArcCache<Key, Value>::put(Key key, Value value)
     {
-        checkGhostCaches(key);
+        rebalanceByGhostHit(key);
 
-        const bool inLfu = lfuPart_->contain(key);
+        const bool inLfu = lfuPart_->contains(key);
         lruPart_->put(key, value);
         if (inLfu)
         {
@@ -29,7 +29,7 @@ namespace CacheSys
     template <typename Key, typename Value>
     bool ArcCache<Key, Value>::get(Key key, Value &value)
     {
-        checkGhostCaches(key);
+        rebalanceByGhostHit(key);
 
         bool shouldTransform = false;
         if (lruPart_->get(key, value, shouldTransform))
@@ -38,17 +38,17 @@ namespace CacheSys
             {
                 lfuPart_->put(key, value);
             }
-            ++hits_;
+            ++this->hits_;
             return true;
         }
 
         if (lfuPart_->get(key, value))
         {
-            ++hits_;
+            ++this->hits_;
             return true;
         }
 
-        ++misses_;
+        ++this->misses_;
         return false;
     }
 
@@ -56,15 +56,15 @@ namespace CacheSys
     Value ArcCache<Key, Value>::get(Key key)
     {
         Value value{};
-        get(key, value);
+        this->get(key, value);
         return value;
     }
 
     template <typename Key, typename Value>
-    bool ArcCache<Key, Value>::checkGhostCaches(Key key)
+    bool ArcCache<Key, Value>::rebalanceByGhostHit(Key key)
     {
         bool inGhost = false;
-        if (lruPart_->checkGhost(key))
+        if (lruPart_->consumeGhostEntry(key))
         {
             if (lfuPart_->decreaseCapacity())
             {
@@ -72,7 +72,7 @@ namespace CacheSys
             }
             inGhost = true;
         }
-        else if (lfuPart_->checkGhost(key))
+        else if (lfuPart_->consumeGhostEntry(key))
         {
             if (lruPart_->decreaseCapacity())
             {

@@ -23,7 +23,7 @@ namespace CacheSys
         // 先查缓存
         if (inner_->get(key, value))
         {
-            ++hits_;
+            ++this->hits_;
             return true;
         }
 
@@ -32,7 +32,7 @@ namespace CacheSys
         value = loader_(key);   // 若 loader 抛出异常，向上传播，不修改缓存
         inner_->put(key, value);
 
-        ++misses_;
+        ++this->misses_;
         return false;   // 返回 false 表示本次是缓存 miss（即使已经回填）
     }
 
@@ -40,7 +40,7 @@ namespace CacheSys
     Value CacheWithLoader<Key, Value>::get(Key key)
     {
         Value value{};
-        get(key, value);
+        this->get(key, value);
         return value;
     }
 

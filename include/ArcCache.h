@@ -20,7 +20,10 @@ namespace CacheSys
         Value get(Key key) override;
 
     private:
-        bool checkGhostCaches(Key key);
+        bool rebalanceByGhostHit(Key key);
+
+        // Backward compatibility wrapper.
+        bool checkGhostCaches(Key key) { return rebalanceByGhostHit(key); }
 
     private:
         size_t capacity_;

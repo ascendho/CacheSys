@@ -43,7 +43,7 @@ namespace CacheSys
     }
 
     template <typename Key, typename Value>
-    bool ArcLruPart<Key, Value>::checkGhost(Key key)
+    bool ArcLruPart<Key, Value>::consumeGhostEntry(Key key)
     {
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = ghostCache_.find(key);

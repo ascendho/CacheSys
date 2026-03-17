@@ -45,14 +45,14 @@ namespace CacheSys
     }
 
     template <typename Key, typename Value>
-    bool ArcLfuPart<Key, Value>::contain(Key key)
+    bool ArcLfuPart<Key, Value>::contains(Key key)
     {
         std::lock_guard<std::mutex> lock(mutex_);
         return mainCache_.find(key) != mainCache_.end();
     }
 
     template <typename Key, typename Value>
-    bool ArcLfuPart<Key, Value>::checkGhost(Key key)
+    bool ArcLfuPart<Key, Value>::consumeGhostEntry(Key key)
     {
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = ghostCache_.find(key);

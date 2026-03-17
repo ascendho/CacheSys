@@ -22,8 +22,12 @@ namespace CacheSys
 
         bool put(Key key, Value value);
         bool get(Key key, Value &value);
-        bool contain(Key key);
-        bool checkGhost(Key key);
+        bool contains(Key key);
+        bool consumeGhostEntry(Key key);
+
+        // Backward compatibility wrappers.
+        bool contain(Key key) { return contains(key); }
+        bool checkGhost(Key key) { return consumeGhostEntry(key); }
 
         void increaseCapacity();
         bool decreaseCapacity();

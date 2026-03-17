@@ -41,17 +41,17 @@ namespace CacheSys
         // 先检查是否过期
         if (isExpiredAndRemove(key))
         {
-            ++misses_;
+            ++this->misses_;
             return false;
         }
 
         if (inner_->get(key, value))
         {
-            ++hits_;
+            ++this->hits_;
             return true;
         }
 
-        ++misses_;
+        ++this->misses_;
         return false;
     }
 
@@ -59,7 +59,7 @@ namespace CacheSys
     Value TtlCache<Key, Value>::get(Key key)
     {
         Value value{};
-        get(key, value);
+        this->get(key, value);
         return value;
     }
 
