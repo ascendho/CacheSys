@@ -38,10 +38,18 @@ namespace CacheSys
             {
                 lfuPart_->put(key, value);
             }
+            ++hits_;
             return true;
         }
 
-        return lfuPart_->get(key, value);
+        if (lfuPart_->get(key, value))
+        {
+            ++hits_;
+            return true;
+        }
+
+        ++misses_;
+        return false;
     }
 
     template <typename Key, typename Value>

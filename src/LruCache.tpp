@@ -69,11 +69,13 @@ namespace CacheSys
         auto it = nodeMap_.find(key);
         if (it == nodeMap_.end())
         {
+            ++misses_;
             return false;
         }
 
         moveToMostRecent(it->second);
         value = it->second->getValue();
+        ++hits_;
         return true;
     }
 
@@ -181,6 +183,7 @@ namespace CacheSys
 
         removeNode(leastRecent);
         nodeMap_.erase(leastRecent->getKey());
+        ++evictions_;
     }
 
     template <typename Key, typename Value>

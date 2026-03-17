@@ -118,10 +118,12 @@ namespace CacheSys
         auto it = nodeMap_.find(key);
         if (it == nodeMap_.end())
         {
+            ++misses_;
             return false;
         }
 
         getInternal(it->second, value);
+        ++hits_;
         return true;
     }
 
@@ -194,6 +196,7 @@ namespace CacheSys
         removeFromFreqList(node);
         nodeMap_.erase(node->key);
         decreaseFreqNum(node->freq);
+        ++evictions_;
     }
 
     template <typename Key, typename Value>
