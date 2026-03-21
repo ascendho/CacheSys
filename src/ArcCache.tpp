@@ -19,11 +19,15 @@ namespace CacheSys
         rebalanceByGhostHit(key);
 
         const bool inLfu = lfuPart_->contains(key);
-        lruPart_->put(key, value);
         if (inLfu)
         {
             lfuPart_->put(key, value);
+            // 防止同一个 key 同时驻留在 LRU/LFU 两侧造成容量折损。
+            lruPart_->remove(key);
+            return;
         }
+
+        lruPart_->put(key, value);
     }
 
     template <typename Key, typename Value>
@@ -37,6 +41,7 @@ namespace CacheSys
             if (shouldTransform)
             {
                 lfuPart_->put(key, value);
+                lruPart_->remove(key);
             }
             ++this->hits_;
             return true;

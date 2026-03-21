@@ -12,6 +12,7 @@
 // ./build/demo/cache_demo
 
 #include <chrono>
+#include <filesystem>
 #include <iomanip>
 #include <iostream>
 #include <string>
@@ -21,10 +22,13 @@
 #include "CacheWithLoader.h"
 #include "LfuCache.h"
 #include "LruCache.h"
+#include "RuntimeConfig.h"
+#include "StrategySelector.h"
 #include "TtlCache.h"
 
 using namespace CacheSys;
 using namespace std::chrono_literals;
+namespace fs = std::filesystem;
 
 // ─── 工具函数 ────────────────────────────────────────────────────────────────
 
@@ -33,6 +37,49 @@ static void printSection(const std::string &title)
     std::cout << "\n┌─────────────────────────────────────────┐\n";
     std::cout << "│  " << std::left << std::setw(40) << title << "│\n";
     std::cout << "└─────────────────────────────────────────┘\n";
+}
+
+static std::string policyName(CacheManager::PolicyType p)
+{
+    switch (p)
+    {
+    case CacheManager::PolicyType::LRU:
+        return "LRU";
+    case CacheManager::PolicyType::LFU:
+        return "LFU";
+    case CacheManager::PolicyType::ARC:
+        return "ARC";
+    }
+    return "UNKNOWN";
+}
+
+// ─── 演示 0：策略选择器 ─────────────────────────────────────────────────────
+
+void demoStrategySelector()
+{
+    printSection("⓪ StrategySelector - 按负载特征推荐策略");
+
+    struct Input
+    {
+        size_t capacity;
+        double writeRatio;
+        double stability;
+        const char *label;
+    };
+
+    const Input samples[] = {
+        {64, 0.75, 0.20, "写多+热点波动大"},
+        {256, 0.15, 0.90, "读多+热点稳定"},
+        {128, 0.45, 0.55, "混合负载"},
+    };
+
+    for (const auto &s : samples)
+    {
+        auto rec = StrategySelector::recommend(s.capacity, s.writeRatio, s.stability);
+        std::cout << "\n  场景: " << s.label
+                  << "\n    推荐策略: " << rec.policyName
+                  << "\n    理由: " << rec.reason << "\n";
+    }
 }
 
 // ─── 模拟数据库 ──────────────────────────────────────────────────────────────
@@ -285,6 +332,63 @@ void demoComposed()
               << (s.hitRate() * 100.0) << "%\n";
 }
 
+// ─── 演示 5：统一运行配置（自动装配） ───────────────────────────────────────
+
+void demoRuntimeConfig()
+{
+    printSection("⑤ RuntimeConfig - 配置驱动自动装配");
+
+    const fs::path configPath = fs::path("demo") / "cache_runtime.conf";
+    std::cout << "\n  加载配置文件: " << configPath.string() << "\n";
+
+    RuntimeConfig cfg = RuntimeConfig::loadFromFile(configPath.string());
+
+    RuntimeAssembler::LoaderRegistry loaders;
+    loaders["user-profile"] = [](const std::string &key)
+    {
+        return std::string("USER_DB<") + key + ">";
+    };
+    loaders["product-catalog"] = [](const std::string &key)
+    {
+        return std::string("PRODUCT_DB<") + key + ">";
+    };
+
+    auto caches = RuntimeAssembler::build(cfg, loaders);
+
+    std::cout << "\n  已自动装配缓存实例:\n";
+    for (const auto &item : cfg.instances)
+    {
+        std::cout << "    - " << item.name
+                  << " policy=" << policyName(item.policy)
+                  << " capacity=" << item.capacity
+                  << " ttl_ms=" << item.ttlMs
+                  << " loader=" << (item.enableLoader ? "on" : "off")
+                  << "\n";
+    }
+
+    std::cout << "\n  运行一次简单读写验证:\n";
+    {
+        auto userCache = caches.at("user-profile");
+        std::string value;
+        bool hit1 = userCache->get("u100", value);
+        bool hit2 = userCache->get("u100", value);
+        std::cout << "    user-profile get(u100): first=" << (hit1 ? "HIT" : "MISS")
+                  << ", second=" << (hit2 ? "HIT" : "MISS")
+                  << ", value=" << value << "\n";
+    }
+
+    {
+        auto sessionCache = caches.at("session-store");
+        std::string value;
+        sessionCache->put("s-1", "session-value");
+        sessionCache->get("s-1", value);
+        std::this_thread::sleep_for(350ms);
+        bool hit = sessionCache->get("s-1", value);
+        std::cout << "    session-store get(s-1) after 350ms: "
+                  << (hit ? "HIT" : "MISS") << "\n";
+    }
+}
+
 // ─── main ────────────────────────────────────────────────────────────────────
 
 int main()
@@ -293,10 +397,12 @@ int main()
     std::cout << "║        CacheSys  端到端演示                  ║\n";
     std::cout << "╚══════════════════════════════════════════════╝\n";
 
+    demoStrategySelector();
     demoAutoLoader();
     demoTtlCache();
     demoCacheManager();
     demoComposed();
+    demoRuntimeConfig();
 
     std::cout << "\n[完成] 所有演示结束。\n";
     return 0;

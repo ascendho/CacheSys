@@ -19,7 +19,11 @@ CacheSys/
 │   └── trace_compare.cpp
 ├── test/
 │   ├── CMakeLists.txt
-│   └── lru_lfu_test.cpp
+│   └── cache_system_test.cpp
+├── demo/
+│   ├── CMakeLists.txt
+│   ├── main.cpp
+│   └── cache_runtime.conf
 ├── src/
 │   ├── LruCache.tpp
 │   └── LfuCache.tpp
@@ -38,6 +42,59 @@ CacheSys/
 - `test/` 放 GTest 单元测试。
 - `benchmark/` 放 Google Benchmark 性能基准。
 - `trace/` 放离线 trace-driven 对比工具（OPT/LRU/LFU miss ratio）。
+- `demo/cache_runtime.conf` 是统一运行配置文件，可自动装配缓存实例。
+
+## 策略选择器
+
+项目新增 `StrategySelector`：根据 `容量`、`写入比例`、`热点稳定度` 推荐策略并给出原因。
+
+使用方式（头文件）：
+
+```cpp
+#include "StrategySelector.h"
+
+auto rec = CacheSys::StrategySelector::recommend(
+	128,   // capacity
+	0.45,  // write ratio in [0,1]
+	0.55   // hotspot stability in [0,1]
+);
+
+// rec.policyName: "LRU" | "LFU" | "ARC"
+// rec.reason:     推荐原因文本
+```
+
+## 统一运行配置（自动装配）
+
+项目新增 `RuntimeConfig` + `RuntimeAssembler`：
+
+- 通过配置文件声明每个缓存实例
+- 支持声明 `策略`、`容量`、`TTL(ms)`、`是否开启回源 loader`
+- 启动时自动构建缓存实例，支持叠加 `CacheWithLoader` 和 `TtlCache`
+
+配置文件示例（`demo/cache_runtime.conf`）：
+
+```txt
+# cache name=<cache-name> policy=<LRU|LFU|ARC> capacity=<N> ttl_ms=<N> loader=<on|off>
+cache name=user-profile policy=LRU capacity=32 ttl_ms=0 loader=on
+cache name=product-catalog policy=LFU capacity=64 ttl_ms=0 loader=on
+cache name=session-store policy=LRU capacity=128 ttl_ms=300 loader=off
+cache name=config-center policy=ARC capacity=16 ttl_ms=1000 loader=off
+```
+
+运行时自动装配示例：
+
+```cpp
+#include "RuntimeConfig.h"
+
+auto cfg = CacheSys::RuntimeConfig::loadFromFile("demo/cache_runtime.conf");
+
+CacheSys::RuntimeAssembler::LoaderRegistry loaders;
+loaders["user-profile"] = [](const std::string& key) {
+	return std::string("USER_DB<") + key + ">";
+};
+
+auto caches = CacheSys::RuntimeAssembler::build(cfg, loaders);
+```
 - 使用时请把 `include/` 加入编译器头文件搜索路径（如 `-Iinclude`）。
 
 ## Benchmark 运行

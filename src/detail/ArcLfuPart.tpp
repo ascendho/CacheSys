@@ -111,7 +111,12 @@ namespace CacheSys
         NodePtr newNode = std::make_shared<NodeType>(key, value);
         mainCache_[key] = newNode;
 
-        freqMap_[1].push_back(newNode);
+        auto &listRef = freqMap_[1];
+        listRef.push_back(newNode);
+        auto inserted = listRef.end();
+        --inserted;
+        newNode->freqIter_ = inserted;
+        newNode->inFreqList_ = true;
         minFreq_ = 1;
         return true;
     }
@@ -134,7 +139,11 @@ namespace CacheSys
         auto fIt = freqMap_.find(oldFreq);
         if (fIt != freqMap_.end())
         {
-            fIt->second.remove(node);
+            if (node->inFreqList_)
+            {
+                fIt->second.erase(node->freqIter_);
+                node->inFreqList_ = false;
+            }
             if (fIt->second.empty())
             {
                 freqMap_.erase(fIt);
@@ -145,7 +154,12 @@ namespace CacheSys
             }
         }
 
-        freqMap_[newFreq].push_back(node);
+        auto &newList = freqMap_[newFreq];
+        newList.push_back(node);
+        auto inserted = newList.end();
+        --inserted;
+        node->freqIter_ = inserted;
+        node->inFreqList_ = true;
     }
 
     template <typename Key, typename Value>
@@ -169,6 +183,7 @@ namespace CacheSys
 
         NodePtr victim = fIt->second.front();
         fIt->second.pop_front();
+        victim->inFreqList_ = false;
 
         if (fIt->second.empty())
         {

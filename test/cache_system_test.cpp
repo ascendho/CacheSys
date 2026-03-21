@@ -1,5 +1,5 @@
 /*
- * 系统测试：
+ * CacheSys 全系统测试：
  * 1. cmake -S . -B build
  * 2. cmake --build build
  * 3. ctest --test-dir build --output-on-failure
@@ -22,7 +22,7 @@
 
 namespace
 {
-    TEST(CachePolicyStatsTest, LruStatsAreCounted)
+    TEST(CacheStatsSystemTest, LruStatsAreCounted)
     {
         CacheSys::LruCache<int, std::string> cache(2);
         std::string value;
@@ -37,7 +37,7 @@ namespace
         EXPECT_DOUBLE_EQ(stats.hitRate(), 0.5);
     }
 
-    TEST(LruCacheSystemTest, EvictionAndRemoveWork)
+    TEST(LruSystemTest, EvictionAndRemoveWork)
     {
         CacheSys::LruCache<int, std::string> cache(2);
         std::string value;
@@ -83,7 +83,7 @@ namespace
         }
     }
 
-    TEST(LfuCacheSystemTest, EvictsLeastFrequentlyUsed)
+    TEST(LfuSystemTest, EvictsLeastFrequentlyUsed)
     {
         CacheSys::LfuCache<int, std::string> cache(2);
         std::string value;
@@ -99,7 +99,7 @@ namespace
         EXPECT_TRUE(cache.get(3, value));
     }
 
-    TEST(LfuCacheSystemTest, PurgeClearsEntries)
+    TEST(LfuSystemTest, PurgeClearsEntries)
     {
         CacheSys::LfuCache<int, std::string> cache(2);
         std::string value;
@@ -129,7 +129,7 @@ namespace
         }
     }
 
-    TEST(ArcCacheSystemTest, PutAndGetBasic)
+    TEST(ArcSystemTest, PutAndGetBasic)
     {
         CacheSys::ArcCache<int, std::string> cache(2, 2);
         std::string value;
@@ -143,7 +143,7 @@ namespace
         EXPECT_EQ(value, "B");
     }
 
-    TEST(ArcCacheSystemTest, CapacityIsRespected)
+    TEST(ArcSystemTest, CapacityIsRespected)
     {
         CacheSys::ArcCache<int, std::string> cache(2, 2);
         std::string value;
@@ -160,7 +160,7 @@ namespace
         EXPECT_EQ(hitCount, 2);
     }
 
-    TEST(TtlCacheSystemTest, ExpiredEntryBecomesMiss)
+    TEST(TtlSystemTest, ExpiredEntryBecomesMiss)
     {
         using namespace std::chrono_literals;
 
@@ -175,7 +175,7 @@ namespace
         EXPECT_FALSE(cache.get(1, value));
     }
 
-    TEST(TtlCacheSystemTest, ZeroTtlMeansNoExpiration)
+    TEST(TtlSystemTest, ZeroTtlMeansNoExpiration)
     {
         auto inner = std::make_unique<CacheSys::LruCache<int, std::string>>(4);
         CacheSys::TtlCache<int, std::string> cache(std::move(inner));
@@ -185,6 +185,14 @@ namespace
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
         EXPECT_TRUE(cache.get(1, value));
         EXPECT_EQ(value, "A");
+    }
+
+    TEST(TtlValidationTest, NullInnerThrows)
+    {
+        std::unique_ptr<CacheSys::CachePolicy<int, std::string>> empty;
+        EXPECT_THROW(
+            (CacheSys::TtlCache<int, std::string>(std::move(empty))),
+            std::invalid_argument);
     }
 
     TEST(CacheWithLoaderSystemTest, MissLoadsThenHits)
@@ -217,6 +225,22 @@ namespace
         EXPECT_EQ(cache.loaderCallCount(), 2U);
     }
 
+    TEST(CacheWithLoaderValidationTest, NullInnerAndEmptyLoaderThrow)
+    {
+        std::unique_ptr<CacheSys::CachePolicy<int, std::string>> empty;
+        EXPECT_THROW(
+            (CacheSys::CacheWithLoader<int, std::string>(
+                std::move(empty),
+                [](const int &key) { return std::to_string(key); })),
+            std::invalid_argument);
+
+        auto inner = std::make_unique<CacheSys::LruCache<int, std::string>>(2);
+        CacheSys::CacheWithLoader<int, std::string>::Loader emptyLoader;
+        EXPECT_THROW(
+            (CacheSys::CacheWithLoader<int, std::string>(std::move(inner), std::move(emptyLoader))),
+            std::invalid_argument);
+    }
+
     TEST(CacheManagerSystemTest, CreateGetAndRemoveCaches)
     {
         CacheSys::CacheManager manager;
@@ -242,7 +266,7 @@ namespace
         EXPECT_FALSE(manager.hasCache("orders"));
     }
 
-    TEST(CacheManagerSystemTest, DuplicateNameThrows)
+    TEST(CacheManagerValidationTest, DuplicateNameThrows)
     {
         CacheSys::CacheManager manager;
         manager.createCache<int, std::string>("same", CacheSys::CacheManager::PolicyType::LRU, 2);
@@ -250,4 +274,12 @@ namespace
             (manager.createCache<int, std::string>("same", CacheSys::CacheManager::PolicyType::LFU, 2)),
             std::runtime_error);
     }
-} // namespace
+
+    TEST(CacheManagerValidationTest, InvalidCapacityThrows)
+    {
+        CacheSys::CacheManager manager;
+        EXPECT_THROW(
+            (manager.createCache<int, std::string>("bad", CacheSys::CacheManager::PolicyType::ARC, -1)),
+            std::invalid_argument);
+    }
+}

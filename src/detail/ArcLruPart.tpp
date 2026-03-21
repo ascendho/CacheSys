@@ -43,6 +43,21 @@ namespace CacheSys
     }
 
     template <typename Key, typename Value>
+    bool ArcLruPart<Key, Value>::remove(Key key)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto it = mainCache_.find(key);
+        if (it == mainCache_.end())
+        {
+            return false;
+        }
+
+        removeFromList(it->second);
+        mainCache_.erase(it);
+        return true;
+    }
+
+    template <typename Key, typename Value>
     bool ArcLruPart<Key, Value>::consumeGhostEntry(Key key)
     {
         std::lock_guard<std::mutex> lock(mutex_);

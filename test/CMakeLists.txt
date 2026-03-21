@@ -10,7 +10,7 @@ set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
 add_executable(cache_tests
-    lru_lfu_test.cpp
+    cache_system_test.cpp
 )
 
 target_include_directories(cache_tests

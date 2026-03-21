@@ -4,72 +4,81 @@
 
 namespace CacheSys
 {
-    // ===== LruNode =====
+    // ===== LruNode 实现 =====
 
+    // 构造函数：初始化键值对，访问计数默认1
     template <typename Key, typename Value>
     LruNode<Key, Value>::LruNode(Key key, Value value) : key_(key), value_(value), accessCount_(1) {}
 
+    // 获取节点键
     template <typename Key, typename Value>
     Key LruNode<Key, Value>::getKey() const
     {
         return key_;
     }
 
+    // 获取节点值
     template <typename Key, typename Value>
     Value LruNode<Key, Value>::getValue() const
     {
         return value_;
     }
 
+    // 更新节点值
     template <typename Key, typename Value>
     void LruNode<Key, Value>::setValue(const Value &value)
     {
         value_ = value;
     }
 
+    // 获取访问计数
     template <typename Key, typename Value>
     size_t LruNode<Key, Value>::getAccessCount() const
     {
         return accessCount_;
     }
 
+    // 访问计数自增
     template <typename Key, typename Value>
     void LruNode<Key, Value>::incrementAccessCount()
     {
         ++accessCount_;
     }
 
-    // ===== LruCache =====
+    // ===== LruCache 实现 =====
 
+    // 构造函数：初始化容量并创建哨兵链表
     template <typename Key, typename Value>
     LruCache<Key, Value>::LruCache(int capacity) : capacity_(capacity)
     {
         initializeList();
     }
 
+    // 写入缓存：存在则更新，不存在则新增（满则淘汰）
     template <typename Key, typename Value>
     void LruCache<Key, Value>::put(Key key, Value value)
     {
-        // 容量非法时直接忽略写入。
+        // 容量非法直接返回
         if (capacity_ <= 0)
         {
             return;
         }
 
-        // 整个 LRU 的核心状态由一把互斥锁保护。
+        // 加锁保证线程安全
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = nodeMap_.find(key);
         if (it != nodeMap_.end())
         {
-            // 命中旧 key：更新值并刷新到“最近使用”。
+            // 命中：更新值并移到最近使用位置
             updateExistingNode(it->second, value);
             return;
         }
 
-        // 未命中旧 key：必要时先淘汰，再插入新节点。
+        // 未命中：淘汰（必要时）+ 新增节点
         addNewNode(key, value);
     }
 
+    // 读取缓存：命中返回true并更新访问顺序，未命中更新统计
     template <typename Key, typename Value>
     bool LruCache<Key, Value>::get(Key key, Value &value)
     {
@@ -77,18 +86,19 @@ namespace CacheSys
         auto it = nodeMap_.find(key);
         if (it == nodeMap_.end())
         {
-            // 未命中时只更新统计并返回。
+            // 未命中：更新统计
             ++this->misses_;
             return false;
         }
 
-        // 命中时刷新访问顺序，并返回数据。
+        // 命中：刷新顺序 + 更新统计 + 返回值
         moveToMostRecent(it->second);
         value = it->second->getValue();
         ++this->hits_;
         return true;
     }
 
+    // 便捷读取：封装带输出参数的get，未命中返回默认值
     template <typename Key, typename Value>
     Value LruCache<Key, Value>::get(Key key)
     {
@@ -97,6 +107,7 @@ namespace CacheSys
         return value;
     }
 
+    // 删除指定key：从链表和哈希表中移除节点
     template <typename Key, typename Value>
     void LruCache<Key, Value>::remove(Key key)
     {
@@ -111,16 +122,17 @@ namespace CacheSys
         nodeMap_.erase(it);
     }
 
+    // 初始化哨兵链表：头尾哨兵简化边界处理
     template <typename Key, typename Value>
     void LruCache<Key, Value>::initializeList()
     {
-        // 使用首尾哨兵节点，避免插入/删除时处理大量边界分支。
         dummyHead_ = std::make_shared<LruNodeType>(Key(), Value());
         dummyTail_ = std::make_shared<LruNodeType>(Key(), Value());
         dummyHead_->next_ = dummyTail_;
         dummyTail_->prev_ = dummyHead_;
     }
 
+    // 更新已存在节点：更新值 + 移到最近使用位置
     template <typename Key, typename Value>
     void LruCache<Key, Value>::updateExistingNode(NodePtr node, const Value &value)
     {
@@ -128,12 +140,12 @@ namespace CacheSys
         moveToMostRecent(node);
     }
 
+    // 新增节点：缓存满则淘汰最久未使用节点，再插入新节点
     template <typename Key, typename Value>
     void LruCache<Key, Value>::addNewNode(const Key &key, const Value &value)
     {
         if (nodeMap_.size() >= static_cast<size_t>(capacity_))
         {
-            // 缓存已满时，淘汰链表头部的最久未使用节点。
             evictLeastRecent();
         }
 
@@ -142,14 +154,15 @@ namespace CacheSys
         nodeMap_[key] = newNode;
     }
 
+    // 移到最近使用位置：先摘除再插入尾部
     template <typename Key, typename Value>
     void LruCache<Key, Value>::moveToMostRecent(NodePtr node)
     {
-        // 先摘除再插入尾部，保持双向链表顺序正确。
         removeNode(node);
         insertNode(node);
     }
 
+    // 从链表中摘除节点：处理前驱后继指针
     template <typename Key, typename Value>
     void LruCache<Key, Value>::removeNode(NodePtr node)
     {
@@ -169,10 +182,10 @@ namespace CacheSys
         node->next_ = nullptr;
     }
 
+    // 插入节点到链表尾部（最近使用位置）
     template <typename Key, typename Value>
     void LruCache<Key, Value>::insertNode(NodePtr node)
     {
-        // 约定链表尾部为“最近使用”位置。
         node->next_ = dummyTail_;
         node->prev_ = dummyTail_->prev_;
 
@@ -186,10 +199,10 @@ namespace CacheSys
         dummyTail_->prev_ = node;
     }
 
+    // 淘汰最久未使用节点：移除头哨兵后第一个节点
     template <typename Key, typename Value>
     void LruCache<Key, Value>::evictLeastRecent()
     {
-        // 哨兵头节点的下一个有效节点就是最久未使用的数据。
         NodePtr leastRecent = dummyHead_->next_;
         if (!leastRecent || leastRecent == dummyTail_)
         {
@@ -201,8 +214,9 @@ namespace CacheSys
         ++this->evictions_;
     }
 
-    // ===== LruKCache =====
+    // ===== LruKCache 实现 =====
 
+    // 构造函数：初始化主缓存、历史缓存和K阈值
     template <typename Key, typename Value>
     LruKCache<Key, Value>::LruKCache(int capacity, int historyCapacity, int k)
         : LruCache<Key, Value>(capacity),
@@ -211,14 +225,16 @@ namespace CacheSys
     {
     }
 
+    // 读取缓存：先查主缓存，再累计历史计数，达标则移入主缓存
     template <typename Key, typename Value>
     Value LruKCache<Key, Value>::get(Key key)
     {
+        std::lock_guard<std::mutex> lock(lruKMutex_);
+
         Value value{};
-        // 先查主缓存；命中则说明已经是热点数据。
         bool inMainCache = LruCache<Key, Value>::get(key, value);
 
-        // 无论主缓存是否命中，都累计历史访问次数。
+        // 累计历史访问次数
         size_t historyCount = historyList_->get(key);
         historyCount++;
         historyList_->put(key, historyCount);
@@ -228,9 +244,9 @@ namespace CacheSys
             return value;
         }
 
+        // 达到K次阈值，将历史数据移入主缓存
         if (historyCount >= static_cast<size_t>(k_))
         {
-            // 达到阈值后，将历史值提升到主缓存。
             auto it = historyValueMap_.find(key);
             if (it != historyValueMap_.end())
             {
@@ -245,9 +261,12 @@ namespace CacheSys
         return value;
     }
 
+    // 写入缓存：主缓存无则更新历史计数，达标则移入主缓存
     template <typename Key, typename Value>
     void LruKCache<Key, Value>::put(Key key, Value value)
     {
+        std::lock_guard<std::mutex> lock(lruKMutex_);
+
         Value existingValue{};
         bool inMainCache = LruCache<Key, Value>::get(key, existingValue);
         if (inMainCache)
@@ -269,8 +288,9 @@ namespace CacheSys
         }
     }
 
-    // ===== ShardedLruCache =====
+    // ===== ShardedLruCache 实现 =====
 
+    // 构造函数：初始化分片数量和每个分片的容量
     template <typename Key, typename Value>
     ShardedLruCache<Key, Value>::ShardedLruCache(size_t capacity, int sliceNum)
         : capacity_(capacity),
@@ -281,7 +301,7 @@ namespace CacheSys
             sliceNum_ = 1;
         }
 
-        // 将总容量均匀拆到各个分片上。
+        // 均分总容量到各分片
         size_t sliceSize = static_cast<size_t>(std::ceil(capacity_ / static_cast<double>(sliceNum_)));
         for (int i = 0; i < sliceNum_; ++i)
         {
@@ -289,14 +309,15 @@ namespace CacheSys
         }
     }
 
+    // 写入缓存：路由到对应分片
     template <typename Key, typename Value>
     void ShardedLruCache<Key, Value>::put(Key key, Value value)
     {
-        // 根据 key 的哈希把请求路由到指定分片。
         size_t sliceIndex = hashKey(key) % static_cast<size_t>(sliceNum_);
         lruSliceCaches_[sliceIndex]->put(key, value);
     }
 
+    // 读取缓存：路由到对应分片
     template <typename Key, typename Value>
     bool ShardedLruCache<Key, Value>::get(Key key, Value &value)
     {
@@ -304,6 +325,7 @@ namespace CacheSys
         return lruSliceCaches_[sliceIndex]->get(key, value);
     }
 
+    // 便捷读取：路由到对应分片
     template <typename Key, typename Value>
     Value ShardedLruCache<Key, Value>::get(Key key)
     {
@@ -312,6 +334,7 @@ namespace CacheSys
         return value;
     }
 
+    // 哈希函数：计算key对应的分片索引
     template <typename Key, typename Value>
     size_t ShardedLruCache<Key, Value>::hashKey(const Key &key) const
     {

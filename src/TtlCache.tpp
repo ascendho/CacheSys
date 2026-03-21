@@ -9,6 +9,10 @@ namespace CacheSys
                                    Duration defaultTtl)
         : inner_(std::move(inner)), defaultTtl_(defaultTtl)
     {
+        if (!inner_)
+        {
+            throw std::invalid_argument("TtlCache: inner cache must not be null");
+        }
     }
 
     template <typename Key, typename Value>
