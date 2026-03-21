@@ -13,15 +13,38 @@ CacheSys/
 │       └── ArcLfuPart.h
 ├── benchmark/
 │   ├── CMakeLists.txt
-│   └── cache_benchmark.cpp
-├── trace/
+│   ├── common.h
+│   ├── cases.cpp
+│   └── main.cpp
+├── evaluation/
 │   ├── CMakeLists.txt
-│   └── trace_compare.cpp
+│   ├── trace/
+│   │   ├── types.h
+│   │   ├── generators.h
+│   │   ├── generators.cpp
+│   │   ├── simulators.h
+│   │   ├── simulators.cpp
+│   │   ├── report.h
+│   │   ├── report.cpp
+│   │   └── compare.cpp
+│   └── scenario/
+│       ├── types.h
+│       ├── generators.h
+│       ├── generators.cpp
+│       ├── evaluator.h
+│       ├── evaluator.cpp
+│       ├── report.h
+│       ├── report.cpp
+│       └── compare.cpp
 ├── test/
 │   ├── CMakeLists.txt
 │   └── cache_system_test.cpp
 ├── demo/
 │   ├── CMakeLists.txt
+│   ├── common.h
+│   ├── common.cpp
+│   ├── scenarios.h
+│   ├── scenarios.cpp
 │   ├── main.cpp
 │   └── cache_runtime.conf
 ├── src/
@@ -41,7 +64,7 @@ CacheSys/
 - `src/` 放模板实现细节（`.tpp`），由头文件在末尾 `#include` 进来。
 - `test/` 放 GTest 单元测试。
 - `benchmark/` 放 Google Benchmark 性能基准。
-- `trace/` 放离线 trace-driven 对比工具（OPT/LRU/LFU miss ratio）。
+- `evaluation/` 放策略评估程序源码与构建入口（trace 已迁移至该目录）。
 - `demo/cache_runtime.conf` 是统一运行配置文件，可自动装配缓存实例。
 
 ## 策略选择器
@@ -111,18 +134,18 @@ cmake --build build --target cache_benchmarks
 ./build/benchmark/cache_benchmarks --benchmark_filter='BM_(Lru|Lfu)_(MixedOps|HotSetGets)'
 ```
 
-## Trace-Driven 对比运行
+## Evaluation（原 Trace）对比运行
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --target cache_trace_compare
-./build/trace/cache_trace_compare
+./build/evaluation/cache_trace_compare
 ```
 
 使用自定义 trace 文件（纯整数序列，空格或换行分隔）：
 
 ```bash
-./build/trace/cache_trace_compare --trace-file=trace.txt --capacities=64,128,256
+./build/evaluation/cache_trace_compare --trace-file=trace.txt --capacities=64,128,256
 ```
 
 场景化命中率测试（参考传统缓存实验输出风格，仅对比 LRU/LFU）：
@@ -130,13 +153,13 @@ cmake --build build --target cache_trace_compare
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --target cache_policy_scenarios
-./build/trace/cache_policy_scenarios
+./build/evaluation/cache_policy_scenarios
 ```
 
 说明：
 
 - `benchmark/` 主要用于测实现性能（ns/op、吞吐等）。
-- `trace/` 主要用于测策略效果（命中率、miss ratio、相对OPT差距）。
+- `evaluation/` 主要用于测策略效果（命中率、miss ratio、相对OPT差距）。
 
 ## FIFO
 

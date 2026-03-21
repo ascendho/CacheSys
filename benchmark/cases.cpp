@@ -1,34 +1,11 @@
-/*
- * cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
- * cmake --build build --target cache_benchmarks
- * ./build/benchmark/cache_benchmarks --benchmark_min_time=1s
- *
- */
-
-#include <cstdint>
-
 #include <benchmark/benchmark.h>
 
 #include "LfuCache.h"
 #include "LruCache.h"
+#include "common.h"
 
 namespace
 {
-    class FastRng
-    {
-    public:
-        explicit FastRng(uint64_t seed) : state_(seed) {}
-
-        uint64_t next()
-        {
-            state_ = state_ * 6364136223846793005ULL + 1ULL;
-            return state_;
-        }
-
-    private:
-        uint64_t state_;
-    };
-
     void BM_Lru_MixedOps(benchmark::State &state)
     {
         const int capacity = static_cast<int>(state.range(0));
@@ -173,5 +150,3 @@ namespace
         ->Args({4096, 128})
         ->MinTime(0.5);
 } // namespace
-
-BENCHMARK_MAIN();

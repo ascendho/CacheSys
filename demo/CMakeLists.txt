@@ -1,5 +1,7 @@
 add_executable(cache_demo
     main.cpp
+    common.cpp
+    scenarios.cpp
 )
 
 target_include_directories(cache_demo

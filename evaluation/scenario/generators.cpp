@@ -1,34 +1,9 @@
-/*
- * 1. cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
- * 2. cmake --build build --target cache_policy_scenarios
- * 3. ./build/trace/cache_policy_scenarios
- *
- */
+#include "generators.h"
 
-#include <iomanip>
-#include <iostream>
 #include <random>
-#include <string>
-#include <vector>
 
-#include "LfuCache.h"
-#include "LruCache.h"
-
-namespace
+namespace CacheSys::Eval::Scenario
 {
-    struct Operation
-    {
-        bool isPut = false;
-        int key = 0;
-        int value = 0;
-    };
-
-    struct EvalResult
-    {
-        size_t gets = 0;
-        size_t hits = 0;
-    };
-
     std::vector<Operation> makeHotDataScenarioOps(int operations, int hotKeys, int coldKeys)
     {
         std::vector<Operation> ops;
@@ -41,8 +16,8 @@ namespace
 
         for (int i = 0; i < operations; ++i)
         {
-            const bool isPut = p01to100(rng) <= 30;  // 30% write, 70% read
-            const bool hitHot = p01to100(rng) <= 70; // 70% hotset, 30% coldset
+            const bool isPut = p01to100(rng) <= 30;
+            const bool hitHot = p01to100(rng) <= 70;
             const int key = hitHot ? hotDist(rng) : (hotKeys + coldDist(rng));
 
             ops.push_back(Operation{isPut, key, key * 10 + (i % 97)});
@@ -64,7 +39,7 @@ namespace
         int cursor = 0;
         for (int i = 0; i < operations; ++i)
         {
-            const bool isPut = p01to100(rng) <= 20; // 20% write
+            const bool isPut = p01to100(rng) <= 20;
             int key = 0;
 
             const int selector = p01to100(rng);
@@ -165,94 +140,11 @@ namespace
         return ops;
     }
 
-    EvalResult evalLru(const std::vector<Operation> &ops, int capacity)
+    std::vector<ScenarioCase> makeDefaultScenarioCases()
     {
-        CacheSys::LruCache<int, int> cache(capacity);
-        EvalResult result;
-
-        for (const Operation &op : ops)
-        {
-            if (op.isPut)
-            {
-                cache.put(op.key, op.value);
-                continue;
-            }
-
-            ++result.gets;
-            int value = 0;
-            if (cache.get(op.key, value))
-            {
-                ++result.hits;
-            }
-        }
-
-        return result;
+        return {
+            ScenarioCase{"测试场景1：热点数据访问测试", 20, makeHotDataScenarioOps(500000, 20, 5000)},
+            ScenarioCase{"测试场景2：循环扫描测试", 50, makeLoopScanScenarioOps(200000, 500)},
+            ScenarioCase{"测试场景3：工作负载剧烈变化测试", 30, makeWorkloadShiftScenarioOps(80000)}};
     }
-
-    EvalResult evalLfu(const std::vector<Operation> &ops, int capacity)
-    {
-        CacheSys::LfuCache<int, int> cache(capacity);
-        EvalResult result;
-
-        for (const Operation &op : ops)
-        {
-            if (op.isPut)
-            {
-                cache.put(op.key, op.value);
-                continue;
-            }
-
-            ++result.gets;
-            int value = 0;
-            if (cache.get(op.key, value))
-            {
-                ++result.hits;
-            }
-        }
-
-        return result;
-    }
-
-    void printScenarioSummary(const std::string &title, int capacity, const EvalResult &lru, const EvalResult &lfu)
-    {
-        const double lruHitRate = lru.gets == 0 ? 0.0 : (100.0 * static_cast<double>(lru.hits) / static_cast<double>(lru.gets));
-        const double lfuHitRate = lfu.gets == 0 ? 0.0 : (100.0 * static_cast<double>(lfu.hits) / static_cast<double>(lfu.gets));
-
-        std::cout << "\n=== " << title << " ===\n";
-        std::cout << "缓存大小: " << capacity << "\n";
-
-        std::cout << std::fixed << std::setprecision(2);
-        std::cout << "LRU - 命中率: " << lruHitRate << "% (" << lru.hits << "/" << lru.gets << ")\n";
-        std::cout << "LFU - 命中率: " << lfuHitRate << "% (" << lfu.hits << "/" << lfu.gets << ")\n";
-    }
-
-} // namespace
-
-int main()
-{
-    {
-        const int capacity = 20;
-        const std::vector<Operation> ops = makeHotDataScenarioOps(500000, 20, 5000);
-        const EvalResult lru = evalLru(ops, capacity);
-        const EvalResult lfu = evalLfu(ops, capacity);
-        printScenarioSummary("测试场景1：热点数据访问测试", capacity, lru, lfu);
-    }
-
-    {
-        const int capacity = 50;
-        const std::vector<Operation> ops = makeLoopScanScenarioOps(200000, 500);
-        const EvalResult lru = evalLru(ops, capacity);
-        const EvalResult lfu = evalLfu(ops, capacity);
-        printScenarioSummary("测试场景2：循环扫描测试", capacity, lru, lfu);
-    }
-
-    {
-        const int capacity = 30;
-        const std::vector<Operation> ops = makeWorkloadShiftScenarioOps(80000);
-        const EvalResult lru = evalLru(ops, capacity);
-        const EvalResult lfu = evalLfu(ops, capacity);
-        printScenarioSummary("测试场景3：工作负载剧烈变化测试", capacity, lru, lfu);
-    }
-
-    return 0;
 }

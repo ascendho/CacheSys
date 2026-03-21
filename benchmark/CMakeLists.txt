@@ -13,7 +13,8 @@ set(BENCHMARK_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googlebenchmark)
 
 add_executable(cache_benchmarks
-    cache_benchmark.cpp
+    cases.cpp
+    main.cpp
 )
 
 target_include_directories(cache_benchmarks

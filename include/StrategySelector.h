@@ -23,8 +23,8 @@ namespace CacheSys
                                                 double writeRatio,
                                                 double hotspotStability)
         {
-            const double w = std::clamp(writeRatio, 0.0, 1.0);
-            const double s = std::clamp(hotspotStability, 0.0, 1.0);
+            const double w = clamp01(writeRatio);
+            const double s = clamp01(hotspotStability);
 
             std::ostringstream oss;
             oss << "capacity=" << capacity
@@ -51,6 +51,12 @@ namespace CacheSys
             oss << "Recommend ARC because workload is mixed; adaptive balancing between recency "
                 << "and frequency usually gives robust hit rate under changing patterns.";
             return {CacheManager::PolicyType::ARC, "ARC", oss.str()};
+        }
+
+    private:
+        static double clamp01(double v)
+        {
+            return std::max(0.0, std::min(1.0, v));
         }
     };
 }

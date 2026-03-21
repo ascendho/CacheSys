@@ -6,6 +6,8 @@
  */
 
 #include <chrono>
+#include <filesystem>
+#include <fstream>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -18,6 +20,8 @@
 #include "CacheWithLoader.h"
 #include "LfuCache.h"
 #include "LruCache.h"
+#include "RuntimeConfig.h"
+#include "StrategySelector.h"
 #include "TtlCache.h"
 
 namespace
@@ -281,5 +285,86 @@ namespace
         EXPECT_THROW(
             (manager.createCache<int, std::string>("bad", CacheSys::CacheManager::PolicyType::ARC, -1)),
             std::invalid_argument);
+    }
+
+    TEST(StrategySelectorTest, RecommendsLruForWriteHeavy)
+    {
+        auto rec = CacheSys::StrategySelector::recommend(64, 0.8, 0.2);
+        EXPECT_EQ(rec.policy, CacheSys::CacheManager::PolicyType::LRU);
+        EXPECT_EQ(rec.policyName, "LRU");
+        EXPECT_FALSE(rec.reason.empty());
+    }
+
+    TEST(StrategySelectorTest, RecommendsLfuForStableReadHeavy)
+    {
+        auto rec = CacheSys::StrategySelector::recommend(256, 0.2, 0.9);
+        EXPECT_EQ(rec.policy, CacheSys::CacheManager::PolicyType::LFU);
+        EXPECT_EQ(rec.policyName, "LFU");
+    }
+
+    TEST(StrategySelectorTest, RecommendsArcForMixed)
+    {
+        auto rec = CacheSys::StrategySelector::recommend(128, 0.45, 0.55);
+        EXPECT_EQ(rec.policy, CacheSys::CacheManager::PolicyType::ARC);
+        EXPECT_EQ(rec.policyName, "ARC");
+    }
+
+    TEST(RuntimeConfigTest, ParseAndAssembleFromFile)
+    {
+        namespace fs = std::filesystem;
+
+        const fs::path configPath = fs::temp_directory_path() / "cachesys_runtime_test.conf";
+        {
+            std::ofstream ofs(configPath.string());
+            ASSERT_TRUE(ofs.good());
+            ofs << "cache name=user-profile policy=LRU capacity=8 ttl_ms=0 loader=on\n";
+            ofs << "cache name=session-store policy=ARC capacity=16 ttl_ms=50 loader=off\n";
+        }
+
+        auto cfg = CacheSys::RuntimeConfig::loadFromFile(configPath.string());
+        ASSERT_EQ(cfg.instances.size(), 2U);
+        EXPECT_EQ(cfg.instances[0].name, "user-profile");
+        EXPECT_EQ(cfg.instances[1].policy, CacheSys::CacheManager::PolicyType::ARC);
+
+        CacheSys::RuntimeAssembler::LoaderRegistry loaders;
+        loaders["user-profile"] = [](const std::string &key)
+        {
+            return std::string("USER<") + key + ">";
+        };
+
+        auto caches = CacheSys::RuntimeAssembler::build(cfg, loaders);
+        ASSERT_EQ(caches.size(), 2U);
+
+        std::string value;
+        bool first = caches.at("user-profile")->get("u1", value);
+        bool second = caches.at("user-profile")->get("u1", value);
+        EXPECT_FALSE(first);
+        EXPECT_TRUE(second);
+        EXPECT_EQ(value, "USER<u1>");
+
+        caches.at("session-store")->put("s1", "session");
+        EXPECT_TRUE(caches.at("session-store")->get("s1", value));
+        std::this_thread::sleep_for(std::chrono::milliseconds(70));
+        EXPECT_FALSE(caches.at("session-store")->get("s1", value));
+
+        std::error_code ec;
+        fs::remove(configPath, ec);
+    }
+
+    TEST(RuntimeConfigTest, InvalidConfigThrows)
+    {
+        namespace fs = std::filesystem;
+
+        const fs::path badPath = fs::temp_directory_path() / "cachesys_runtime_bad.conf";
+        {
+            std::ofstream ofs(badPath.string());
+            ASSERT_TRUE(ofs.good());
+            ofs << "cache name=bad policy=UNKNOWN capacity=8 ttl_ms=0 loader=off\n";
+        }
+
+        EXPECT_THROW((CacheSys::RuntimeConfig::loadFromFile(badPath.string())), std::runtime_error);
+
+        std::error_code ec;
+        fs::remove(badPath, ec);
     }
 }

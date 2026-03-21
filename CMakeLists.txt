@@ -7,7 +7,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(CACHESYS_BUILD_TESTS "Build CacheSys unit tests" ON)
 option(CACHESYS_BUILD_BENCHMARKS "Build CacheSys benchmarks" ON)
-option(CACHESYS_BUILD_TRACE_COMPARE "Build trace-driven policy comparison tool" ON)
+option(CACHESYS_BUILD_TRACE_COMPARE "Build trace-driven policy comparison tool (deprecated alias, use CACHESYS_BUILD_EVALUATION)" ON)
+option(CACHESYS_BUILD_EVALUATION "Build policy evaluation tools" ON)
 option(CACHESYS_BUILD_DEMO "Build CacheSys end-to-end demo" ON)
 
 if(CACHESYS_BUILD_TESTS)
@@ -19,8 +20,8 @@ if(CACHESYS_BUILD_BENCHMARKS)
     add_subdirectory(benchmark)
 endif()
 
-if(CACHESYS_BUILD_TRACE_COMPARE)
-    add_subdirectory(trace)
+if(CACHESYS_BUILD_EVALUATION OR CACHESYS_BUILD_TRACE_COMPARE)
+    add_subdirectory(evaluation)
 endif()
 
 if(CACHESYS_BUILD_DEMO)

@@ -1,5 +1,8 @@
 add_executable(cache_trace_compare
-    trace_compare.cpp
+    trace/compare.cpp
+    trace/generators.cpp
+    trace/simulators.cpp
+    trace/report.cpp
 )
 
 target_include_directories(cache_trace_compare
@@ -8,7 +11,10 @@ target_include_directories(cache_trace_compare
 )
 
 add_executable(cache_policy_scenarios
-    policy_scenario_compare.cpp
+    scenario/compare.cpp
+    scenario/generators.cpp
+    scenario/evaluator.cpp
+    scenario/report.cpp
 )
 
 target_include_directories(cache_policy_scenarios
