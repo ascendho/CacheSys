@@ -1,307 +1,105 @@
-## 项目结构（重构后）
+## CacheSys
 
-```text
-CacheSys/
-├── include/
-│   ├── CachePolicy.h
-│   ├── LruCache.h
-│   └── LfuCache.h
-│   ├── ArcCache.h
-│   └── detail/
-│       ├── ArcCacheNode.h
-│       ├── ArcLruPart.h
-│       └── ArcLfuPart.h
-├── benchmark/
-│   ├── CMakeLists.txt
-│   ├── common.h
-│   ├── cases.cpp
-│   └── main.cpp
-├── evaluation/
-│   ├── CMakeLists.txt
-│   ├── trace/
-│   │   ├── types.h
-│   │   ├── generators.h
-│   │   ├── generators.cpp
-│   │   ├── simulators.h
-│   │   ├── simulators.cpp
-│   │   ├── report.h
-│   │   ├── report.cpp
-│   │   └── compare.cpp
-│   └── scenario/
-│       ├── types.h
-│       ├── generators.h
-│       ├── generators.cpp
-│       ├── evaluator.h
-│       ├── evaluator.cpp
-│       ├── report.h
-│       ├── report.cpp
-│       └── compare.cpp
-├── test/
-│   ├── CMakeLists.txt
-│   └── cache_system_test.cpp
-├── demo/
-│   ├── CMakeLists.txt
-│   ├── common.h
-│   ├── common.cpp
-│   ├── scenarios.h
-│   ├── scenarios.cpp
-│   ├── main.cpp
-│   └── cache_runtime.conf
-├── src/
-│   ├── LruCache.tpp
-│   └── LfuCache.tpp
-│   ├── ArcCache.tpp
-│   └── detail/
-│       ├── ArcCacheNode.tpp
-│       ├── ArcLruPart.tpp
-│       └── ArcLfuPart.tpp
-└── README.md
-```
+CacheSys 是基于 C++ 开发的一个可扩展缓存系统，主要用于学习和实践缓存相关技术。该系统里实现了多种经典的缓存淘汰算法，包括 LRU（最近最少使用）、LFU（最不经常使用）、ARC（自适应替换缓存）、LRU-K，同时也支持分片缓存的功能。 
 
-说明：
+除了核心的缓存淘汰算法外，该项目还通过组件化的方式给 CacheSys 补充了完整的缓存功能：比如支持带过期时间的缓存控制（TTL 装饰），实现了 CacheWithLoader 组件，能在缓存未命中时自动从数据源加载数据，也做了 CacheManager 来集中管理不同的缓存实例和相关参数规则。 
 
-- `include/` 只放对外头文件（声明）。
-- `src/` 放模板实现细节（`.tpp`），由头文件在末尾 `#include` 进来。
-- `test/` 放 GTest 单元测试。
-- `benchmark/` 放 Google Benchmark 性能基准。
-- `evaluation/` 放策略评估程序源码与构建入口（trace 已迁移至该目录）。
-- `demo/cache_runtime.conf` 是统一运行配置文件，可自动装配缓存实例。
+为了让这个缓存系统用起来更方便，本项目采用了基于配置驱动的方式（RuntimeConfig / StrategySelector）来自动装配缓存组件，降低了使用时的接入成本。另外，我还做了一套完整的验证环节来保证功能正确和性能达标：test 模块通过自动化测试验证缓存的容量限制、路由逻辑、TTL 规则和自动加载数据的功能是否正确；benchmark 模块用来测试缓存在高频读写混合场景下的底层性能；evaluation 模块可以加载外部的访问轨迹，评估不同缓存策略的命中率，还能把这些策略和理论最优的 OPT 算法做对比，为优化缓存策略提供数据参考。
 
-## 策略选择器
-
-项目新增 `StrategySelector`：根据 `容量`、`写入比例`、`热点稳定度` 推荐策略并给出原因。
-
-使用方式（头文件）：
-
-```cpp
-#include "StrategySelector.h"
-
-auto rec = CacheSys::StrategySelector::recommend(
-	128,   // capacity
-	0.45,  // write ratio in [0,1]
-	0.55   // hotspot stability in [0,1]
-);
-
-// rec.policyName: "LRU" | "LFU" | "ARC"
-// rec.reason:     推荐原因文本
-```
-
-## 统一运行配置（自动装配）
-
-项目新增 `RuntimeConfig` + `RuntimeAssembler`：
-
-- 通过配置文件声明每个缓存实例
-- 支持声明 `策略`、`容量`、`TTL(ms)`、`是否开启回源 loader`
-- 启动时自动构建缓存实例，支持叠加 `CacheWithLoader` 和 `TtlCache`
-
-配置文件示例（`demo/cache_runtime.conf`）：
-
-```txt
-# cache name=<cache-name> policy=<LRU|LFU|ARC> capacity=<N> ttl_ms=<N> loader=<on|off>
-cache name=user-profile policy=LRU capacity=32 ttl_ms=0 loader=on
-cache name=product-catalog policy=LFU capacity=64 ttl_ms=0 loader=on
-cache name=session-store policy=LRU capacity=128 ttl_ms=300 loader=off
-cache name=config-center policy=ARC capacity=16 ttl_ms=1000 loader=off
-```
-
-运行时自动装配示例：
-
-```cpp
-#include "RuntimeConfig.h"
-
-auto cfg = CacheSys::RuntimeConfig::loadFromFile("demo/cache_runtime.conf");
-
-CacheSys::RuntimeAssembler::LoaderRegistry loaders;
-loaders["user-profile"] = [](const std::string& key) {
-	return std::string("USER_DB<") + key + ">";
-};
-
-auto caches = CacheSys::RuntimeAssembler::build(cfg, loaders);
-```
-- 使用时请把 `include/` 加入编译器头文件搜索路径（如 `-Iinclude`）。
-
-## Benchmark 运行
+## 构建
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+```
+
+可选构建开关：
+
+1. CACHESYS_BUILD_TESTS：是否构建测试，默认 ON。
+2. CACHESYS_BUILD_BENCHMARKS：是否构建基准，默认 ON。
+3. CACHESYS_BUILD_EVALUATION：是否构建评估工具，默认 ON。
+4. CACHESYS_BUILD_DEMO：是否构建 Demo，默认 ON。
+5. CACHESYS_BUILD_TRACE_COMPARE：历史兼容开关，默认 ON。
+
+示例：只构建评估程序。
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+  -DCACHESYS_BUILD_TESTS=OFF \
+  -DCACHESYS_BUILD_BENCHMARKS=OFF \
+  -DCACHESYS_BUILD_DEMO=OFF
+cmake --build build
+```
+
+## 测试
+
+```bash
+cmake --build build --target cache_tests
+ctest --test-dir build --output-on-failure
+```
+
+覆盖范围包含：
+
+1. LRU、LFU、ARC 基础行为与容量约束。
+2. LRU-K 与分片缓存路由行为。
+3. TTL 过期语义。
+4. CacheWithLoader 回源语义。
+5. CacheManager 管理与参数校验。
+6. StrategySelector 与 RuntimeConfig 装配流程。
+
+## 基准
+
+```bash
 cmake --build build --target cache_benchmarks
 ./build/benchmark/cache_benchmarks --benchmark_min_time=1s
 ```
 
-只跑某些 case：
+仅运行部分基准：
 
 ```bash
 ./build/benchmark/cache_benchmarks --benchmark_filter='BM_(Lru|Lfu)_(MixedOps|HotSetGets)'
 ```
 
-## Evaluation（原 Trace）对比运行
+## 实验评估
+
+### 1) Trace-Driven 对比
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --target cache_trace_compare
 ./build/evaluation/cache_trace_compare
 ```
 
-使用自定义 trace 文件（纯整数序列，空格或换行分隔）：
+使用外部轨迹：
 
 ```bash
 ./build/evaluation/cache_trace_compare --trace-file=trace.txt --capacities=64,128,256
 ```
 
-场景化命中率测试（参考传统缓存实验输出风格，仅对比 LRU/LFU）：
+### 2) 场景化命中率评估
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --target cache_policy_scenarios
 ./build/evaluation/cache_policy_scenarios
 ```
 
-说明：
+### 3) 关于 OPT 对比口径
 
-- `benchmark/` 主要用于测实现性能（ns/op、吞吐等）。
-- `evaluation/` 主要用于测策略效果（命中率、miss ratio、相对OPT差距）。
+1. OPT 是给定容量下的理论最优离线下界。
+2. 评估中若出现某策略优于 OPT，通常是容量口径不一致导致。
+3. 当前 trace 评估已对 ARC 输入容量做口径归一，避免出现虚假的优于 OPT 结果。
 
-## FIFO
+## 演示 Demo
 
-1. 关键问题：Belady 异常
+```bash
+cmake --build build --target cache_demo
+./build/demo/cache_demo
+```
 
-> 这是 FIFO 算法特有的反直觉现象：当分配给进程的物理块数增加时，缺页次数反而会上升，这和我们 “内存越大，缺页越少” 的直觉完全相反。
-> 经典触发序列：1, 2, 3, 4, 1, 2, 5, 1, 2, 3, 4, 5
-> 物理块数 = 3 时，缺页次数 = 9 次
-> 物理块数 = 4 时，缺页次数 = 10 次
-> 原因：FIFO 只看 “进入时间”，不看 “使用频率”，增加物理块反而会让一些短期内会被频繁访问的页面被更早淘汰，最终导致缺页变多。
->
-> ### 补充：为什么 LRU 不会出现 Belady 异常？
->
-> 因为 LRU 的替换逻辑是**基于访问历史的 “贪心选择”**：物理块数越多，能保留的 “最近访问过的页面” 就越多，缺页次数只会单调减少或不变，不会出现上升的情况。这也是 LRU 比 FIFO 更可靠的核心原因之一。
+Demo 会展示：
 
-以注释的形式：
-
-## LRU
-
-1. 潜在问题：误淘汰热点数据
-
-> LRU 只关注 “最近多久没被访问”，完全不考虑 “访问频率”，这会导致高频热点数据被误淘汰：
-> 例子：一个数据在 1 小时的前 59 分钟内被访问了 1 万次（典型热点数据），但在最后 1 分钟里没有被访问，而其他几个数据在这 1 分钟内被访问了。
-> 结果：这个热点数据会被判定为 “最长时间未访问”，从而被 LRU 算法淘汰，这显然不合理 —— 它明明是高频使用的，只是暂时没被访问。
-> 本质缺陷：LRU 无法区分 “偶尔访问一次” 和 “高频但暂时中断访问” 的页面。
-
-2. 对访问模式不敏感：循环遍历场景下命中率极低
-
-> **典型场景**：缓存容量 = 3，访问序列是循环遍历 `A→B→C→D→A→B→C→D…`
->
-> - 访问 A/B/C → 缓存满：`[A,B,C]`
-> - 访问 D → 淘汰最早的 A → `[B,C,D]`
-> - 访问 A → 淘汰最早的 B → `[C,D,A]`
-> - 访问 B → 淘汰最早的 C → `[D,A,B]`
-> - …… 循环往复，每次访问几乎都要淘汰旧数据，命中率接近 0
->
-> **根本原因**：LRU 只看「**最近一次访问时间**」，完全无法识别 “数据会重复访问” 的规律，循环访问时新数据总会把刚访问过的数据挤出去，导致缓存几乎失效。
-
-3. 缓存污染：一次性冷数据挤占热点数据
-
-> **典型场景**：热点数据是 `A/B/C`（高频访问），突然加载一个一次性数据 `D`（之后再也不访问）
->
-> - 原本缓存：`[A,B,C]`
-> - 插入 D → 容量满，淘汰 A → `[B,C,D]`
-> - 之后访问 A：需要重新加载，同时淘汰 B；访问 B：重新加载，淘汰 C……
-> - D 一直占着缓存位置，却再也不被访问，导致热点数据频繁被淘汰，缓存利用率大幅下降
->
-> **根本原因**：LRU 无法区分「高频热点数据」和「一次性冷数据」，只要冷数据刚被访问，就会把热点数据挤出去，造成**缓存污染**。
-
-4. 锁粒度大：高并发下性能瓶颈
-
-> **典型场景**：多线程高并发访问缓存（比如电商秒杀、API 网关）
->
-> - 基础 LRU 用**全局互斥锁**保护链表和哈希表，所有操作（put/get/remove）都要抢占同一把锁。
-> - 高并发下，大量线程阻塞等待锁，导致吞吐量极低，同步等待开销巨大。
->
-> **根本原因**：锁的粒度是「整个缓存」，没有做并发拆分，无法利用多核 CPU 的并行能力。
-
-## 优化方案
-
-1. LRU-k：解决「访问模式不敏感」和「缓存污染」
-
-> **核心思想**：把「最近 1 次访问」升级为「最近 k 次访问」，只有当数据被访问 ≥k 次时，才进入主缓存，过滤一次性冷数据，同时识别循环访问规律。
->
-> **实现逻辑**：
->
-> - 分为两层：**历史队列** + **主 LRU 队列**
->
->   - 历史队列：记录数据的前 k-1 次访问，只保留访问次数 <k 的数据，满了就直接淘汰（这些是一次性冷数据）。
->   - 主 LRU 队列：存放访问次数 ≥k 的数据，按「**最近第 k 次访问时间**」排序，淘汰时选「最早的第 k 次访问」的数据。
->
->   
->
-> **例子（k=2）**：
->
-> - 第一次访问 A → A 进入历史队列。
-> - 第二次访问 A → A 从历史队列移到主 LRU 队列，标记为「最近第 2 次访问」。
-> - 一次性数据 D → 只访问 1 次，永远留在历史队列，满了就被淘汰，**不会污染主缓存**。
->
-> **解决的问题**：
->
-> - ✅ 缓存污染：一次性数据永远进不了主缓存。
-> - ✅ 循环遍历：循环访问的数据会很快达到 k 次，进入主缓存后稳定命中。
-> - ✅ 场景适配：更关注「多次访问」，减少误淘汰热点数据的概率。
+1. 策略推荐。
+2. 配置文件驱动装配。
+3. 典型缓存访问流程。
 
 
 
-2. HashLRU（分片 LRU）：解决「锁粒度大」的并发瓶颈
-
-> **核心思想**：把整个缓存拆分成多个独立的 LRU 分片（Shard），每个分片有自己的锁，不同 key 的请求分散到不同分片，降低锁冲突。
->
-> **实现逻辑**：
->
-> 1. **分片规则**：对 key 做哈希，然后对「分片数量」取模，决定该 key 归属哪个分片（比如分片数 = CPU 核心数，或 2 的幂次）。
-> 2. **独立管理**：每个分片是一个完整的 LRU 实例，有自己的链表、哈希表和锁，互不干扰。
-> 3. **并发访问**：不同分片的操作可以并行执行，只有同一分片内的操作才需要抢锁。
->
-> **例子**：
->
-> - 分片数 = 4，key A 哈希后取模 = 0 → 分片 0；key B 哈希后取模 = 1 → 分片 1。
-> - 线程 1 操作 A，线程 2 操作 B，可以同时执行，无需等待同一把锁。
->
-> **解决的问题**：
->
-> - ✅ 锁粒度从「全局」缩小到「分片级」，大幅降低锁冲突，高并发下吞吐量显著提升。
-> - ✅ 实现简单，兼容原有 LRU 逻辑，无需修改核心替换策略。
-> - ✅ 可扩展性好：分片数可以根据 CPU 核心数动态调整，充分利用多核性能。
-
-## LFU
-
-1. 频率爆炸问题
-
-> 长期驻留的热点数据，访问频率会**无限增长**（比如被访问 100 万次，`freq` 就到 1e6），不仅占用额外内存，还可能导致计数溢出（比如 `int` 类型溢出）。
->
-> 高频率的热点数据会永远 “霸占” 缓存，几乎不会被淘汰。
-
-2. 过时热点数据占用缓存
-
-> 一些数据曾经是热点（频率很高），但现在已经不再被访问，却因为**频率基数太大**，很难被淘汰。
->
-> 比如：一个数据 `freq=1000`，新数据 `freq=1`，哪怕新数据是近期热门，也会先淘汰新数据，而过时热点还占着位置。
-
-3. 冷启动问题
-
-> 刚加入缓存的新数据，`freq=1`，很容易被淘汰，哪怕它是**近期刚访问的热门数据**。
->
-> 比如缓存容量 = 3，新数据 A/B/C 都 `freq=1`，再加入 D 时，会直接淘汰最早的 A，哪怕 A 刚被访问。
-
-4. 不适合短期热点
-
-> LFU 对**长期稳定热点**表现好，但对**短期突发热点**（如电商秒杀、临时活动）响应慢：
->
-> - 短期热点需要积累访问频率才能被 “保护”，但还没积累到高频率就可能被淘汰；
-> - 长期热点（如之前的爆款）还占着缓存位置，导致短期热点无法及时缓存。
-
-5. 缺乏动态适应性
-
-> 固定按「频率优先」的策略，无法适应不同场景：
->
-> - 有的场景更看重「最近访问」（如临时活动），有的更看重「频率」（如长期热门商品）；
-> - LFU 无法动态调整权重，只能机械地按频率淘汰。
-
-6. 并发性能瓶颈
-
-> 和基础 LRU 一样，基础实现用**全局互斥锁**保护数据结构，高并发下大量线程阻塞等待锁，同步等待开销巨大。
