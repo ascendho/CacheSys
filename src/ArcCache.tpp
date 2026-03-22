@@ -8,8 +8,8 @@ namespace CacheSys
     ArcCache<Key, Value>::ArcCache(size_t capacity, size_t transformThreshold)
         : capacity_(capacity),
           transformThreshold_(transformThreshold),
-          lruPart_(std::make_unique<ArcLruPart<Key, Value>>(capacity, transformThreshold)),
-          lfuPart_(std::make_unique<ArcLfuPart<Key, Value>>(capacity, transformThreshold))
+            lruPart_(std::make_unique<ArcLruPart<Key, Value>>(capacity, transformThreshold)),
+            lfuPart_(std::make_unique<ArcLfuPart<Key, Value>>(capacity, transformThreshold))
     {
     }
 
@@ -40,8 +40,11 @@ namespace CacheSys
         {
             if (shouldTransform)
             {
-                lfuPart_->put(key, value);
-                lruPart_->remove(key);
+                // 只有当 LFU 侧接收成功时才从 LRU 侧移除，避免容量边界导致条目丢失。
+                if (lfuPart_->put(key, value))
+                {
+                    lruPart_->remove(key);
+                }
             }
             ++this->hits_;
             return true;
