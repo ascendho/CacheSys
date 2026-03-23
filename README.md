@@ -47,7 +47,7 @@ ctest --test-dir build --output-on-failure
 5. CacheManager 管理与参数校验。
 6. StrategySelector 与 RuntimeConfig 装配流程。
 
-## 基准
+## 基准测试
 
 ```bash
 cmake --build build --target cache_benchmarks
@@ -59,6 +59,10 @@ cmake --build build --target cache_benchmarks
 ```bash
 ./build/benchmark/cache_benchmarks --benchmark_filter='BM_(Lru|Lfu)_(MixedOps|HotSetGets)'
 ```
+
+
+
+
 
 ## 实验评估
 

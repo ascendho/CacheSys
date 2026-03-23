@@ -364,7 +364,7 @@ namespace CacheSys
         for (int i = 0; i < sliceNum_; ++i)
         {
             // 为每个分片初始化独立的 LfuCache
-            lruSliceCaches_.emplace_back(new LfuCache<Key, Value>(static_cast<int>(sliceSize), maxAverageNum));
+            lfuSliceCaches_.emplace_back(new LfuCache<Key, Value>(static_cast<int>(sliceSize), maxAverageNum));
         }
     }
 
@@ -372,14 +372,14 @@ namespace CacheSys
     void ShardedLfuCache<Key, Value>::put(Key key, Value value)
     {
         size_t sliceIndex = hashKey(key) % static_cast<size_t>(sliceNum_);
-        lruSliceCaches_[sliceIndex]->put(key, value);
+        lfuSliceCaches_[sliceIndex]->put(key, value);
     }
 
     template <typename Key, typename Value>
     bool ShardedLfuCache<Key, Value>::get(Key key, Value &value)
     {
         size_t sliceIndex = hashKey(key) % static_cast<size_t>(sliceNum_);
-        return lruSliceCaches_[sliceIndex]->get(key, value);
+        return lfuSliceCaches_[sliceIndex]->get(key, value);
     }
 
     template <typename Key, typename Value>

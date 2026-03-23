@@ -1,4 +1,7 @@
+#include <algorithm>
+#include <array>
 #include <iostream>
+#include <iomanip>
 #include <string>
 #include <utility>
 #include <vector>
@@ -78,6 +81,11 @@ int main(int argc, char **argv)
     // 输出表头
     CacheSys::Eval::Trace::printHeader();
 
+    // 汇总统计：用于输出整体排序（按平均 miss ratio 从低到高）
+    std::array<double, 4> missRatioSum{0.0, 0.0, 0.0, 0.0}; // OPT/LRU/LFU/ARC
+    size_t groupCount = 0;
+    std::array<int, 4> bestCount{0, 0, 0, 0};
+
     // 双层循环：遍历轨迹与容量，逐项输出策略对比结果
     for (const auto &item : traces)
     {
@@ -93,12 +101,58 @@ int main(int argc, char **argv)
             const CacheSys::Eval::Trace::EvalResult lfu = CacheSys::Eval::Trace::simulateLfu(trace, capacity);
             const CacheSys::Eval::Trace::EvalResult arc = CacheSys::Eval::Trace::simulateArc(trace, capacity);
 
+            missRatioSum[0] += opt.missRatio;
+            missRatioSum[1] += lru.missRatio;
+            missRatioSum[2] += lfu.missRatio;
+            missRatioSum[3] += arc.missRatio;
+            ++groupCount;
+
+            const std::array<double, 4> groupMiss{opt.missRatio, lru.missRatio, lfu.missRatio, arc.missRatio};
+            const double groupBest = *std::min_element(groupMiss.begin(), groupMiss.end());
+            for (size_t i = 0; i < groupMiss.size(); ++i)
+            {
+                if (groupMiss[i] == groupBest)
+                {
+                    ++bestCount[i];
+                }
+            }
+
             // DeltaOPT = 当前策略未命中率 - OPT未命中率（单位：百分点）
             CacheSys::Eval::Trace::printRow(traceName, capacity, "OPT", trace.size(), opt, 0.0);
             CacheSys::Eval::Trace::printRow(traceName, capacity, "LRU", trace.size(), lru, (lru.missRatio - opt.missRatio) * 100.0);
             CacheSys::Eval::Trace::printRow(traceName, capacity, "LFU", trace.size(), lfu, (lfu.missRatio - opt.missRatio) * 100.0);
             CacheSys::Eval::Trace::printRow(traceName, capacity, "ARC", trace.size(), arc, (arc.missRatio - opt.missRatio) * 100.0);
             std::cout << "--------------------------------------------------------------------------------\n";
+        }
+    }
+
+    if (groupCount > 0)
+    {
+        struct RankItem
+        {
+            const char *policy = "";
+            double avgMissRatio = 0.0;
+            int bestWins = 0;
+        };
+
+        std::array<RankItem, 4> ranking{{
+            RankItem{"OPT", missRatioSum[0] / static_cast<double>(groupCount), bestCount[0]},
+            RankItem{"LRU", missRatioSum[1] / static_cast<double>(groupCount), bestCount[1]},
+            RankItem{"LFU", missRatioSum[2] / static_cast<double>(groupCount), bestCount[2]},
+            RankItem{"ARC", missRatioSum[3] / static_cast<double>(groupCount), bestCount[3]},
+        }};
+
+        std::sort(ranking.begin(), ranking.end(), [](const RankItem &a, const RankItem &b)
+                  { return a.avgMissRatio < b.avgMissRatio; });
+
+        std::cout << "\nOverall Ranking by Average Miss Ratio (lower is better)\n";
+        std::cout << "-------------------------------------------------------\n";
+        std::cout << "Groups: " << groupCount << " (trace x capacity)\n";
+        for (size_t i = 0; i < ranking.size(); ++i)
+        {
+            std::cout << (i + 1) << ". " << std::left << std::setw(4) << ranking[i].policy
+                      << " avg_miss_ratio=" << std::fixed << std::setprecision(3) << (ranking[i].avgMissRatio * 100.0) << "%"
+                      << ", best_count=" << ranking[i].bestWins << "\n";
         }
     }
 
