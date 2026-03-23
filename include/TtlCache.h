@@ -10,46 +10,90 @@
 
 namespace CacheSys
 {
-    // TtlCache 为任意 CachePolicy 添加 TTL（过期时间）支持。
-    // 采用装饰器模式：接收一个内部 CachePolicy，在其基础上叠加惰性过期检查。
-    // - put(key, value)       使用默认 TTL（0 表示永不过期）
-    // - put(key, value, ttl) 为该 key 指定独立 TTL
-    // - get 时若 key 已过期，视为 miss 并延迟从内部缓存清除
-    // - purgeExpired()        主动清除所有已过期的 key
+    /**
+     * @class TtlCache
+     * @brief 带有生存时间（TTL）限制的缓存装饰器
+     * @tparam Key 键类型
+     * @tparam Value 值类型
+     * 
+     * 该类包装了另一个缓存策略（inner_），并为其增加了过期时间管理。
+     * 当尝试获取已过期的项时，它会自动从底层缓存中移除该项。
+     */
     template <typename Key, typename Value>
     class TtlCache : public CachePolicy<Key, Value>
     {
     public:
+        // 时间相关类型别名，使用 steady_clock 保证单调递增，不受系统时间修改影响
         using Duration  = std::chrono::milliseconds;
         using Clock     = std::chrono::steady_clock;
         using TimePoint = std::chrono::time_point<Clock>;
 
-        // inner      : 底层缓存策略（LRU/LFU/ARC 均可）
-        // defaultTtl : 默认过期时长，0 表示永不过期
+        /**
+         * @brief 构造函数
+         * @param inner 实际负责存储的底层缓存策略实例（如 LruCache 的智能指针）
+         * @param defaultTtl 默认的生存时间。如果为 Duration::zero()，则默认不自动过期。
+         */
         explicit TtlCache(std::unique_ptr<CachePolicy<Key, Value>> inner,
                           Duration defaultTtl = Duration::zero());
 
-        // 使用默认 TTL 写入
+        /**
+         * @brief 存入数据（使用构造时指定的默认 TTL）
+         */
         void put(Key key, Value value) override;
-        // 指定该条目的 TTL
+        
+        /**
+         * @brief 存入数据并指定特定的生存时间
+         * @param key 键
+         * @param value 值
+         * @param ttl 该项特有的生存时间
+         */
         void put(Key key, Value value, Duration ttl);
 
+        /**
+         * @brief 获取数据（引用方式）
+         * 内部会先检查数据是否过期，如果已过期则会将其从底层缓存移除。
+         * @return bool 是否命中且未过期
+         */
         bool get(Key key, Value &value) override;
+
+        /**
+         * @brief 获取数据（直接返回方式）
+         * @return Value 命中的值，若未命中或已过期则返回默认值
+         */
         Value get(Key key) override;
+
+        /**
+         * @brief 显式移除某个键
+         */
         void remove(Key key) override;
 
-        // 主动扫描并清除所有已过期条目（含内部缓存）
+        /**
+         * @brief 扫描并清理所有已过期的缓存项
+         * 这是一个主动维护函数，可以由后台线程定期调用，防止过期数据长期占用内存。
+         */
         void purgeExpired();
 
     private:
-        // 检查 key 是否已过期；若过期则从 expiryMap_ 和内部缓存移除，返回 true
+        /**
+         * @brief 检查指定键是否过期，若过期则执行移除操作
+         * @param key 要检查的键
+         * @return bool true 表示已过期且已被移除，false 表示未过期或不存在
+         */
         bool isExpiredAndRemove(const Key &key);
 
+        /// 被包装的底层缓存策略（例如 LruCache/LfuCache）
         std::unique_ptr<CachePolicy<Key, Value>> inner_;
+        
+        /// 默认的生存时间间隔
         Duration                                 defaultTtl_;
-        std::unordered_map<Key, TimePoint>       expiryMap_;   // key -> 过期时间点
+        
+        /// 存储每个键对应的过期绝对时间点
+        std::unordered_map<Key, TimePoint>       expiryMap_;   
+        
+        /// 保护 expiryMap_ 操作的互斥锁
         std::mutex                               ttlMutex_;
     };
 }
 
+// 包含模板的具体实现
 #include "../src/TtlCache.tpp"

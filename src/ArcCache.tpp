@@ -22,7 +22,7 @@ namespace CacheSys
         if (inLfu)
         {
             lfuPart_->put(key, value);
-            // 防止同一个 key 同时驻留在 LRU/LFU 两侧造成容量折损。
+            
             lruPart_->remove(key);
             return;
         }
@@ -40,7 +40,7 @@ namespace CacheSys
         {
             if (shouldTransform)
             {
-                // 只有当 LFU 侧接收成功时才从 LRU 侧移除，避免容量边界导致条目丢失。
+                
                 if (lfuPart_->put(key, value))
                 {
                     lruPart_->remove(key);

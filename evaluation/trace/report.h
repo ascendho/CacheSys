@@ -5,23 +5,23 @@
 
 #include "types.h"
 
-// Eval：评估模块 → Trace：轨迹分析子模块（格式化输出评估结果）
+// Eval：评估模块 → Trace：轨迹分析结果输出子模块
 namespace CacheSys::Eval::Trace
 {
     // 打印程序使用帮助信息（参数说明、运行方式）
-    // prog：程序名称（argv[0]）
+    // prog：程序名（argv[0]）
     void printHelp(const char *prog);
 
-    // 打印评估结果表格的表头
+    // 打印评估结果表格表头
     void printHeader();
 
-    // 打印评估结果单行数据（表格行），展示单组策略的评估指标
-    // traceName：轨迹名称（如"商品详情访问轨迹"）
+    // 打印评估结果单行数据（表格行）
+    // traceName：轨迹名称
     // capacity：缓存容量
-    // policy：缓存策略名称（如"LRU"/"LFU"/"OPT"）
+    // policy：策略名称（OPT/LRU/LFU/ARC）
     // accesses：总访问次数
-    // result：核心评估结果（未命中数、未命中率）
-    // deltaOpt：与OPT策略的未命中率差值（衡量策略接近理论最优的程度）
+    // result：评估结果（未命中数、未命中率）
+    // deltaOpt：与OPT策略未命中率的差值（百分点）
     void printRow(const std::string &traceName,
                   int capacity,
                   const std::string &policy,

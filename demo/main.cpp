@@ -1,8 +1,6 @@
 #include "scenarios.h"
 
- // cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
- // cmake --build build --target cache_demo
- // ./build/demo/cache_demo
+// Demo程序入口：顺序执行全部演示案例
 int main()
 {
     runAllDemos();

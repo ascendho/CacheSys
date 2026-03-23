@@ -1,38 +1,54 @@
-/*
- * 缓存策略场景化测试工具 - 编译运行步骤（Release模式性能最优）：
- * 1. cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
- * 2. cmake --build build --target cache_policy_scenarios
- * 3. ./build/evaluation/cache_policy_scenarios
- */
-
 #include <vector>
 
 #include "evaluator.h"
 #include "generators.h"
 #include "report.h"
 
-// 主函数：场景化测试工具入口，批量执行预设业务场景，对比LRU/LFU/ARC的GET命中率
+/**
+ * @brief 缓存系统性能评估主程序
+ * 
+ * 该程序的主要流程：
+ * 1. 初始化一组标准化的测试场景（包含热点访问、循环扫描、负载偏移等）。
+ * 2. 遍历每个场景，在相同的操作序列和容量限制下，分别运行 LRU、LFU 和 ARC 算法。
+ * 3. 收集各算法的命中率数据。
+ * 4. 输出格式化的对比报告，用于分析不同算法在不同负载下的优劣。
+ * 
+ * @return int 程序退出状态码
+ */
 int main()
 {
-    // 生成默认测试用例列表（包含3类典型业务场景：热点数据、循环扫描、负载漂移）
+    // --- 1. 初始化测试场景 ---
+    // 获取系统中预定义的一系列默认测试用例（ScenarioCases）
+    // 每个 Case 包含了场景标题、建议的缓存容量以及预生成的指令序列 (Ops)
     const std::vector<CacheSys::Eval::Scenario::ScenarioCase> scenarios =
         CacheSys::Eval::Scenario::makeDefaultScenarioCases();
 
-    // 遍历每个测试场景，执行策略评估并输出结果
+    // --- 2. 遍历并执行评估 ---
+    // 对每一个预设的场景进行闭环测试
     for (const auto &scenario : scenarios)
     {
-        // 评估LRU策略在当前场景下的GET命中指标（总GET数、命中数）
+        // a. 运行 LRU (最近最少使用) 算法仿真
+        // 传入相同的 ops 序列和 capacity，确保对比的公平性（控制变量法）
         const CacheSys::Eval::Scenario::EvalResult lru =
             CacheSys::Eval::Scenario::evalLru(scenario.ops, scenario.capacity);
-        // 评估LFU策略在当前场景下的GET命中指标
+        
+        // b. 运行 LFU (最不经常使用) 算法仿真
         const CacheSys::Eval::Scenario::EvalResult lfu =
             CacheSys::Eval::Scenario::evalLfu(scenario.ops, scenario.capacity);
-        // 评估ARC策略在当前场景下的GET命中指标
+        
+        // c. 运行 ARC (自适应替换缓存) 算法仿真
         const CacheSys::Eval::Scenario::EvalResult arc =
             CacheSys::Eval::Scenario::evalArc(scenario.ops, scenario.capacity);
 
-        // 格式化打印当前场景的汇总结果（标题+容量+各策略命中率）
-        CacheSys::Eval::Scenario::printScenarioSummary(scenario.title, scenario.capacity, lru, lfu, arc);
+        // --- 3. 输出对比报告 ---
+        // 将三个算法的评估结果 (EvalResult) 汇总并打印成表格或列表形式
+        CacheSys::Eval::Scenario::printScenarioSummary(
+            scenario.title, 
+            scenario.capacity, 
+            lru, 
+            lfu, 
+            arc
+        );
     }
 
     return 0;

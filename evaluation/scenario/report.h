@@ -4,13 +4,25 @@
 
 #include "types.h"
 
-// Eval：评估模块 → Scenario：场景化测试子模块
+/**
+ * @brief 缓存评估与场景模拟命名空间
+ */
 namespace CacheSys::Eval::Scenario
 {
-    // 打印场景化测试的汇总结果（对比LRU/LFU/ARC的GET命中指标）
-    // title：场景名称（如"热点商品访问"）
-    // capacity：测试用的缓存容量
-    // lru/lfu/arc：对应策略的评估结果（GET总次数+命中次数）
+    /**
+     * @brief 打印不同缓存策略在特定场景下的对比汇总报告
+     * 
+     * 该函数接收多个策略的评估结果，并在控制台输出一个格式化的对比表格。
+     * 输出内容通常包括：场景名称、缓存容量、各策略的命中次数、总请求数以及命中率。
+     * 
+     * @param title 场景的描述性标题（例如："Zipfian 分布测试"、"大数据量扫描测试"等）
+     * @param capacity 运行该测试场景时统一设置的缓存最大容量
+     * @param lru LRU (最近最少使用) 算法的运行结果数据
+     * @param lfu LFU (最不经常使用) 算法的运行结果数据
+     * @param arc ARC (自适应替换缓存) 算法的运行结果数据
+     * 
+     * @note 该函数主要用于性能分析阶段，帮助开发者根据可视化数据选择最适合当前业务的缓存算法。
+     */
     void printScenarioSummary(const std::string &title,
                               int capacity,
                               const EvalResult &lru,

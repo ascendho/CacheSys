@@ -1,5 +1,5 @@
 #include "common.h"           
-#include <iomanip>            // 用于格式化输出（如std::setw）
+#include <iomanip>            
 #include <iostream>           
 
 // 打印带边框的分段标题
@@ -10,7 +10,7 @@ void printSection(const std::string &title)
     std::cout << "└─────────────────────────────────────────┘\n";
 }
 
-// 根据缓存策略枚举值，返回对应的名称字符串
+// 根据策略枚举返回可读名称
 std::string policyName(CacheSys::CacheManager::PolicyType p)
 {
     switch (p)
@@ -23,24 +23,24 @@ std::string policyName(CacheSys::CacheManager::PolicyType p)
         return "ARC";
     }
 
-    // 未知策略返回默认值
+    // 默认分支：未知策略
     return "UNKNOWN";  
 }
 
-// 模拟用户数据库查询接口：统计查询次数，输出查询日志并返回模拟用户数据
+// 模拟用户数据库查询：累计计数并返回组装数据
 std::string MockUserDB::query(const std::string &userId)
 {
-    // 累计查询次数
+    // 统计DB调用次数
     ++queryCount;  
 
     std::cout << "    [DB] 查询用户 " << userId << " (第 " << queryCount << " 次 DB 访问)\n";
     return "User<" + userId + ">: name=张三_" + userId + ", role=admin";
 }
 
-// 模拟产品数据库查询接口：统计查询次数，输出查询日志并返回模拟产品数据
+// 模拟商品数据库查询：累计计数并返回组装数据
 std::string MockProductDB::query(int productId)
 {
-    // 累计查询次数
+    // 统计DB调用次数
     ++queryCount;  
     
     std::cout << "    [DB] 查询商品 #" << productId << " (第 " << queryCount << " 次 DB 访问)\n";

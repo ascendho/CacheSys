@@ -9,31 +9,30 @@ namespace
 {
     /**
      * LRU缓存-混合操作性能测试（75% GET + 25% PUT）
-     * @param state Benchmark框架状态对象，range(0)=缓存容量，range(1)=key总空间大小
+     * @param state range(0)=缓存容量，range(1)=随机key空间
      */
     void BM_Lru_MixedOps(benchmark::State &state)
     {
         const int capacity = static_cast<int>(state.range(0)); // 缓存容量
-        const int keySpace = static_cast<int>(state.range(1)); // 随机key的取值范围
+        const int keySpace = static_cast<int>(state.range(1)); // 随机key空间
 
-        // 初始化LRU缓存，预填充capacity个key（模拟缓存已有数据）
+        // 预填充缓存，模拟系统运行中的常态缓存状态
         CacheSys::LruCache<int, int> cache(capacity);
         for (int i = 0; i < capacity; ++i)
         {
             cache.put(i, i);
         }
 
-        FastRng rng(0x12345678ULL); // 固定种子，保证测试可复现
-        int sink = 0;               // 接收缓存返回值，避免编译器优化掉核心逻辑
+        FastRng rng(0x12345678ULL); // 固定种子，保证结果可复现
+        int sink = 0;               // 汇总值，防止编译器优化掉核心逻辑
 
-        // 循环执行测试（Benchmark框架自动控制迭代次数，统计耗时）
+        // Benchmark框架控制循环次数；每轮按概率执行GET或PUT
         for (auto _ : state)
         {
-            const int key = static_cast<int>(rng.next() % static_cast<uint64_t>(keySpace)); // 随机生成key
-            const bool doGet = (rng.next() & 3ULL) != 0ULL;                                 // 位运算控制比例：75% GET，25% PUT
+            const int key = static_cast<int>(rng.next() % static_cast<uint64_t>(keySpace));
+            const bool doGet = (rng.next() & 3ULL) != 0ULL; // 75% GET，25% PUT
             if (doGet)
             {
-                // GET操作：命中则更新sink（防止优化）
                 int value = 0;
                 if (cache.get(key, value))
                 {
@@ -42,41 +41,37 @@ namespace
             }
             else
             {
-                // PUT操作：写入随机key-value
                 cache.put(key, key);
             }
         }
 
-        // 显式告诉编译器不优化sink，保证测试准确性
-        benchmark::DoNotOptimize(sink); 
+        // 告知编译器该变量有副作用，不可优化
+        benchmark::DoNotOptimize(sink);
     }
 
     /**
      * LFU缓存-混合操作性能测试（逻辑同LRU，仅缓存类型不同）
-     * @param state range(0)=缓存容量，range(1)=key总空间大小
+     * @param state range(0)=缓存容量，range(1)=随机key空间
      */
     void BM_Lfu_MixedOps(benchmark::State &state)
     {
         const int capacity = static_cast<int>(state.range(0));
         const int keySpace = static_cast<int>(state.range(1));
 
-        // 初始化LFU缓存，预填充数据
+        // 预填充缓存
         CacheSys::LfuCache<int, int> cache(capacity);
         for (int i = 0; i < capacity; ++i)
         {
             cache.put(i, i);
         }
 
-        // 不同种子，避免和LRU生成完全相同的key序列
-        FastRng rng(0x87654321ULL); 
+        FastRng rng(0x87654321ULL); // 与LRU不同种子，避免完全同序列
         int sink = 0;
 
         for (auto _ : state)
         {
             const int key = static_cast<int>(rng.next() % static_cast<uint64_t>(keySpace));
-
-            // 75% GET，25% PUT
-            const bool doGet = (rng.next() & 3ULL) != 0ULL; 
+            const bool doGet = (rng.next() & 3ULL) != 0ULL; // 75% GET，25% PUT
             if (doGet)
             {
                 int value = 0;
@@ -96,25 +91,24 @@ namespace
 
     /**
      * LRU缓存-热点GET性能测试（仅GET，访问小范围热点key）
-     * @param state range(0)=缓存容量，range(1)=热点key集合大小
+     * @param state range(0)=缓存容量，range(1)=热点集合大小
      */
     void BM_Lru_HotSetGets(benchmark::State &state)
     {
         const int capacity = static_cast<int>(state.range(0)); // 缓存容量
-        const int hotSet = static_cast<int>(state.range(1));   // 热点key的取值范围（小集合）
+        const int hotSet = static_cast<int>(state.range(1));   // 热点集合大小
 
-        // 初始化LRU缓存，预填充数据
+        // 预填充缓存
         CacheSys::LruCache<int, int> cache(capacity);
         for (int i = 0; i < capacity; ++i)
         {
             cache.put(i, i);
         }
 
-        // 固定种子，可复现
-        FastRng rng(0x31415926ULL); 
+        FastRng rng(0x31415926ULL); // 固定种子，便于复现
         int sink = 0;
 
-        // 仅执行GET操作，访问小范围热点key（模拟爆款商品等高频访问场景）
+        // 仅GET操作，聚焦热点访问场景
         for (auto _ : state)
         {
             const int key = static_cast<int>(rng.next() % static_cast<uint64_t>(hotSet));
@@ -130,25 +124,24 @@ namespace
 
     /**
      * LFU缓存-热点GET性能测试（逻辑同LRU，仅缓存类型不同）
-     * @param state range(0)=缓存容量，range(1)=热点key集合大小
+     * @param state range(0)=缓存容量，range(1)=热点集合大小
      */
     void BM_Lfu_HotSetGets(benchmark::State &state)
     {
         const int capacity = static_cast<int>(state.range(0));
         const int hotSet = static_cast<int>(state.range(1));
 
-        // 初始化LFU缓存，预填充数据
+        // 预填充缓存
         CacheSys::LfuCache<int, int> cache(capacity);
         for (int i = 0; i < capacity; ++i)
         {
             cache.put(i, i);
         }
 
-        // 不同种子，避免和LRU生成完全相同的key序列
-        FastRng rng(0x27182818ULL);
+        FastRng rng(0x27182818ULL); // 固定种子，便于复现
         int sink = 0;
 
-        // 仅GET操作，访问小热点集
+        // 仅GET操作，聚焦热点访问场景
         for (auto _ : state)
         {
             const int key = static_cast<int>(rng.next() % static_cast<uint64_t>(hotSet));
@@ -162,25 +155,25 @@ namespace
         benchmark::DoNotOptimize(sink);
     }
 
-    // 注册LRU混合操作测试，指定两组参数（容量, key空间），最小运行0.5秒保证统计稳定
+    // 注册LRU混合操作测试
     BENCHMARK(BM_Lru_MixedOps)
         ->Args({1024, 4096})
         ->Args({4096, 16384})
         ->MinTime(0.5);
 
-    // 注册LFU混合操作测试，参数和LRU一致，保证对比公平
+    // 注册LFU混合操作测试
     BENCHMARK(BM_Lfu_MixedOps)
         ->Args({1024, 4096})
         ->Args({4096, 16384})
         ->MinTime(0.5);
 
-    // 注册LRU热点GET测试，参数（容量, 热点集大小），最小运行0.5秒
+    // 注册LRU热点GET测试
     BENCHMARK(BM_Lru_HotSetGets)
         ->Args({1024, 64})
         ->Args({4096, 128})
         ->MinTime(0.5);
 
-    // 注册LFU热点GET测试，参数和LRU一致
+    // 注册LFU热点GET测试
     BENCHMARK(BM_Lfu_HotSetGets)
         ->Args({1024, 64})
         ->Args({4096, 128})

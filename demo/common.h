@@ -3,28 +3,28 @@
 #include <string>
 #include "CacheManager.h"
 
-// 打印格式化的分段标题（用于控制台输出分隔模块）
+// 打印格式化分段标题（用于控制台展示）
 void printSection(const std::string &title);
 
-// 将缓存策略枚举转换为可读的名称字符串（如LRU -> "LRU"）
+// 将策略枚举转为可读字符串
 std::string policyName(CacheSys::CacheManager::PolicyType p);
 
-// 模拟用户数据库（用于缓存测试，统计查询次数）
+// 模拟用户数据库：用于演示缓存回源场景
 struct MockUserDB
 {
-    // 累计查询次数（用于计算缓存命中率）
+    // 统计数据库查询次数
     int queryCount = 0;
 
-    // 查询指定用户ID的模拟用户信息
+    // 按用户ID查询模拟数据
     std::string query(const std::string &userId);
 };
 
-// 模拟产品数据库（用于缓存测试，统计查询次数）
+// 模拟商品数据库：用于演示热点与回源场景
 struct MockProductDB
 {
-    // 累计查询次数（用于计算缓存命中率）
+    // 统计数据库查询次数
     int queryCount = 0;
 
-    // 查询指定产品ID的模拟产品信息
+    // 按商品ID查询模拟数据
     std::string query(int productId);
 };
