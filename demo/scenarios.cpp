@@ -1,80 +1,59 @@
 #include "scenarios.h"
 
 #include <chrono>
-#include <filesystem>
 #include <iomanip>
 #include <iostream>
-#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
 
-#include "CacheManager.h"
+#include "ArcCache.h"
 #include "CacheWithLoader.h"
 #include "LfuCache.h"
 #include "LruCache.h"
-#include "RuntimeConfig.h"
-#include "StrategySelector.h"
 #include "TtlCache.h"
 #include "common.h"
 
 using namespace CacheSys;
 using namespace std::chrono_literals;
-namespace fs = std::filesystem;
 
 // 匿名命名空间：放置仅演示文件内部使用的辅助函数
 namespace
 {
-    // 解析运行时配置路径：从多个候选路径中返回第一个存在的配置文件
-    fs::path resolveRuntimeConfigPath()
+    // 演示基础策略行为：相同访问序列下比较 LRU/LFU/ARC 的命中率
+    void demoPolicyBasics()
     {
-        // 适配不同运行目录（项目根目录 / build目录 等）
-        const std::vector<fs::path> candidates = {
-            fs::path("demo") / "cache_runtime.conf",
-            fs::path(".") / "cache_runtime.conf",
-            fs::path("..") / "demo" / "cache_runtime.conf",
-            fs::path("..") / ".." / "demo" / "cache_runtime.conf"};
+        printSection("⓪ 基础策略行为（LRU / LFU / ARC）");
 
-        for (const auto &p : candidates)
+        LruCache<int, std::string> lru(3);
+        LfuCache<int, std::string> lfu(3);
+        ArcCache<int, std::string> arc(3, 2);
+
+        const std::vector<int> trace = {1, 2, 3, 1, 2, 4, 1, 3, 4, 1, 2, 5};
+        std::string value;
+
+        for (const int k : trace)
         {
-            if (fs::exists(p))
-            {
-                return p;
-            }
+            lru.put(k, "V" + std::to_string(k));
+            lfu.put(k, "V" + std::to_string(k));
+            arc.put(k, "V" + std::to_string(k));
+
+            (void)lru.get(k, value);
+            (void)lfu.get(k, value);
+            (void)arc.get(k, value);
         }
 
-        throw std::runtime_error("Cannot find cache_runtime.conf in known locations");
-    }
+        const auto s1 = lru.getStats();
+        const auto s2 = lfu.getStats();
+        const auto s3 = arc.getStats();
 
-    // 演示策略选择器：根据容量、读写比、热点稳定性推荐策略
-    void demoStrategySelector()
-    {
-        printSection("⓪ StrategySelector - 按负载特征推荐策略");
-
-        // 测试输入结构
-        struct Input
-        {
-            size_t capacity;   
-            double writeRatio; 
-            double stability;  
-            const char *label; 
-        };
-
-        // 场景样本
-        const Input samples[] = {
-            {64, 0.75, 0.20, "写多+热点波动大"},
-            {256, 0.15, 0.90, "读多+热点稳定"},
-            {128, 0.45, 0.55, "混合负载"},
-        };
-
-        // 遍历并输出推荐策略与理由
-        for (const auto &s : samples)
-        {
-            auto rec = StrategySelector::recommend(s.capacity, s.writeRatio, s.stability);
-            std::cout << "\n  场景: " << s.label
-                      << "\n    推荐策略: " << rec.policyName
-                      << "\n    理由: " << rec.reason << "\n";
-        }
+        std::cout << "\n  访问序列长度: " << trace.size() << "\n";
+        std::cout << "  LRU: hit=" << s1.hits << ", miss=" << s1.misses
+                  << ", hitRate=" << std::fixed << std::setprecision(1) << (s1.hitRate() * 100.0) << "%\n";
+        std::cout << "  LFU: hit=" << s2.hits << ", miss=" << s2.misses
+                  << ", hitRate=" << std::fixed << std::setprecision(1) << (s2.hitRate() * 100.0) << "%\n";
+        std::cout << "  ARC: hit=" << s3.hits << ", miss=" << s3.misses
+                  << ", hitRate=" << std::fixed << std::setprecision(1) << (s3.hitRate() * 100.0) << "%\n";
     }
 
     // 演示自动回源缓存：未命中自动调用loader并回填缓存
@@ -175,89 +154,6 @@ namespace
                   << (s.hitRate() * 100.0) << "%\n";
     }
 
-    // 演示缓存管理器：统一创建与管理多策略缓存实例
-    void demoCacheManager()
-    {
-        printSection("③ CacheManager - 多缓存实例统一管理");
-
-        CacheManager manager;
-        // 创建三类缓存实例
-        manager.createCache<std::string, std::string>("user-cache", CacheManager::PolicyType::LRU, 50);
-        manager.createCache<int, std::string>("product-cache", CacheManager::PolicyType::LFU, 200);
-        manager.createCache<std::string, std::string>("config-cache", CacheManager::PolicyType::ARC, 20);
-
-        std::cout << "\n  已创建缓存：user-cache(LRU/50)  product-cache(LFU/200)  config-cache(ARC/20)\n";
-
-        // user-cache 基本读写
-        {
-            auto cache = manager.getCache<std::string, std::string>("user-cache");
-            for (int i = 1; i <= 5; ++i)
-            {
-                cache->put("user" + std::to_string(i), "data_" + std::to_string(i));
-            }
-            std::string v;
-            cache->get("user1", v);
-            cache->get("user2", v);
-            cache->get("user3", v);
-            cache->get("user99", v);
-            cache->get("user100", v);
-        }
-
-        // product-cache 热点访问模拟
-        {
-            MockProductDB db;
-            auto cache = manager.getCache<int, std::string>("product-cache");
-
-            // 预写入商品数据
-            for (int id = 1; id <= 10; ++id)
-            {
-                cache->put(id, db.query(id));
-            }
-
-            // 热点商品高频访问 + 冷商品低频访问
-            std::string v;
-            for (int round = 0; round < 5; ++round)
-            {
-                for (int id : {1, 2, 3})
-                {
-                    cache->get(id, v);
-                }
-            }
-            for (int id : {7, 8, 9, 10})
-            {
-                cache->get(id, v);
-            }
-
-            // 输出该缓存统计
-            std::cout << "\n  商品缓存：热点(1/2/3) x5 轮 + 冷数据(7~10) x1 轮\n";
-            auto s = cache->getStats();
-            std::cout << "  统计：命中=" << s.hits << "  未命中=" << s.misses
-                      << "  命中率=" << std::fixed << std::setprecision(1)
-                      << (s.hitRate() * 100.0) << "%\n";
-        }
-
-        // config-cache 基本读写
-        {
-            auto cache = manager.getCache<std::string, std::string>("config-cache");
-            for (const std::string &k : {"db.host", "db.port", "db.name", "app.debug", "app.version"})
-            {
-                cache->put(k, "value_" + k);
-            }
-
-            std::string v;
-            for (int i = 0; i < 4; ++i)
-            {
-                cache->get("db.host", v);
-                cache->get("db.port", v);
-            }
-            cache->get("nonexist1", v);
-            cache->get("nonexist2", v);
-        }
-
-        // 汇总输出所有缓存统计
-        manager.printStats();
-    }
-
     // 演示组合缓存：TTL + 自动回源
     void demoComposed()
     {
@@ -306,66 +202,6 @@ namespace
                   << "  命中率=" << std::fixed << std::setprecision(1)
                   << (s.hitRate() * 100.0) << "%\n";
     }
-
-    // 演示运行时配置装配：按配置文件创建缓存实例
-    void demoRuntimeConfig()
-    {
-        printSection("⑤ RuntimeConfig - 配置驱动自动装配");
-
-        // 加载配置
-        const fs::path configPath = resolveRuntimeConfigPath();
-        std::cout << "\n  加载配置文件: " << configPath.string() << "\n";
-        RuntimeConfig cfg = RuntimeConfig::loadFromFile(configPath.string());
-
-        // 注册可选loader
-        RuntimeAssembler::LoaderRegistry loaders;
-        loaders["user-profile"] = [](const std::string &key)
-        {
-            return std::string("USER_DB<") + key + ">";
-        };
-        loaders["product-catalog"] = [](const std::string &key)
-        {
-            return std::string("PRODUCT_DB<") + key + ">";
-        };
-
-        // 按配置自动构建缓存
-        auto caches = RuntimeAssembler::build(cfg, loaders);
-
-        // 输出已装配实例
-        std::cout << "\n  已自动装配缓存实例:\n";
-        for (const auto &item : cfg.instances)
-        {
-            std::cout << "    - " << item.name
-                      << " policy=" << policyName(item.policy)
-                      << " capacity=" << item.capacity
-                      << " ttl_ms=" << item.ttlMs
-                      << " loader=" << (item.enableLoader ? "on" : "off")
-                      << "\n";
-        }
-
-        // 执行一轮功能验证
-        std::cout << "\n  运行一次简单读写验证:\n";
-        {
-            auto userCache = caches.at("user-profile");
-            std::string value;
-            bool hit1 = userCache->get("u100", value);
-            bool hit2 = userCache->get("u100", value);
-            std::cout << "    user-profile get(u100): first=" << (hit1 ? "HIT" : "MISS")
-                      << ", second=" << (hit2 ? "HIT" : "MISS")
-                      << ", value=" << value << "\n";
-        }
-
-        {
-            auto sessionCache = caches.at("session-store");
-            std::string value;
-            sessionCache->put("s-1", "session-value");
-            sessionCache->get("s-1", value);
-            std::this_thread::sleep_for(350ms); // 超过配置TTL
-            bool hit = sessionCache->get("s-1", value);
-            std::cout << "    session-store get(s-1) after 350ms: "
-                      << (hit ? "HIT" : "MISS") << "\n";
-        }
-    }
 }
 
 // 统一执行全部演示场景
@@ -375,12 +211,10 @@ void runAllDemos()
     std::cout << "║        CacheSys  端到端演示                  ║\n";
     std::cout << "╚══════════════════════════════════════════════╝\n";
 
-    demoStrategySelector(); // 策略推荐
-    demoAutoLoader();       // 自动回源
-    demoTtlCache();         // TTL过期
-    demoCacheManager();     // 多实例管理
-    demoComposed();         // 组合缓存
-    demoRuntimeConfig();    // 配置驱动装配
+    demoPolicyBasics(); // 基础策略行为
+    demoAutoLoader();   // 自动回源
+    demoTtlCache();     // TTL过期
+    demoComposed();     // 组合缓存
 
     std::cout << "\n[完成] 所有演示结束。\n";
 }

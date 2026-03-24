@@ -5,6 +5,11 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+    set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS Debug Release RelWithDebInfo MinSizeRel)
+endif()
+
 option(CACHESYS_BUILD_TESTS "Build CacheSys unit tests" ON)
 option(CACHESYS_BUILD_BENCHMARKS "Build CacheSys benchmarks" ON)
 option(CACHESYS_BUILD_TRACE_COMPARE "Build trace-driven policy comparison tool (deprecated alias, use CACHESYS_BUILD_EVALUATION)" ON)

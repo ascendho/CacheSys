@@ -10,23 +10,6 @@ void printSection(const std::string &title)
     std::cout << "└─────────────────────────────────────────┘\n";
 }
 
-// 根据策略枚举返回可读名称
-std::string policyName(CacheSys::CacheManager::PolicyType p)
-{
-    switch (p)
-    {
-    case CacheSys::CacheManager::PolicyType::LRU:
-        return "LRU";
-    case CacheSys::CacheManager::PolicyType::LFU:
-        return "LFU";
-    case CacheSys::CacheManager::PolicyType::ARC:
-        return "ARC";
-    }
-
-    // 默认分支：未知策略
-    return "UNKNOWN";  
-}
-
 // 模拟用户数据库查询：累计计数并返回组装数据
 std::string MockUserDB::query(const std::string &userId)
 {

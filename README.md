@@ -2,9 +2,9 @@
 
 CacheSys 是基于 C++ 开发的一个可扩展缓存系统，主要用于学习和实践缓存相关技术。该系统里实现了多种经典的缓存淘汰算法，包括 LRU（最近最少使用）、LFU（最不经常使用）、ARC（自适应替换缓存）、LRU-K，同时也支持分片缓存的功能。 
 
-除了核心的缓存淘汰算法外，该项目还通过组件化的方式给 CacheSys 补充了完整的缓存功能：比如支持带过期时间的缓存控制（TTL 装饰），实现了 CacheWithLoader 组件，能在缓存未命中时自动从数据源加载数据，也做了 CacheManager 来集中管理不同的缓存实例和相关参数规则。 
+除了核心的缓存淘汰算法外，该项目还通过组件化的方式给 CacheSys 补充了完整的缓存能力：支持带过期时间的缓存控制（TTL 装饰），并实现了 CacheWithLoader 组件，在缓存未命中时自动从数据源回源加载。 
 
-为了让这个缓存系统用起来更方便，本项目采用了基于配置驱动的方式（RuntimeConfig / StrategySelector）来自动装配缓存组件，降低了使用时的接入成本。另外，我还做了一套完整的验证环节来保证功能正确和性能达标：test 模块通过自动化测试验证缓存的容量限制、路由逻辑、TTL 规则和自动加载数据的功能是否正确；benchmark 模块用来测试缓存在高频读写混合场景下的底层性能；evaluation 模块可以加载外部的访问轨迹，评估不同缓存策略的命中率，还能把这些策略和理论最优的 OPT 算法做对比，为优化缓存策略提供数据参考。
+项目提供完整验证链路来保证功能正确和性能可量化：test 模块通过自动化测试验证容量限制、路由逻辑、TTL 规则和自动加载语义；benchmark 模块测试高频混合读写下的吞吐表现；evaluation 模块可加载外部访问轨迹评估不同策略命中率，并与理论最优 OPT 做对比。
 
 ## 构建
 
@@ -44,8 +44,6 @@ ctest --test-dir build --output-on-failure
 2. LRU-K 与分片缓存路由行为。
 3. TTL 过期语义。
 4. CacheWithLoader 回源语义。
-5. CacheManager 管理与参数校验。
-6. StrategySelector 与 RuntimeConfig 装配流程。
 
 ## 基准测试
 
@@ -59,6 +57,18 @@ cmake --build build --target cache_benchmarks
 ```bash
 ./build/benchmark/cache_benchmarks --benchmark_filter='BM_(Lru|Lfu)_(MixedOps|HotSetGets)'
 ```
+
+一键导出线程数-吞吐曲线（CSV + SVG）：
+
+```bash
+cmake --build build --target cache_benchmark_thread_curve
+```
+
+输出文件：
+
+1. `build/benchmark/thread_curve.csv`
+2. `build/benchmark/thread_curve.svg`
+3. `build/benchmark/thread_curve_raw.txt`
 
 
 
@@ -101,9 +111,9 @@ cmake --build build --target cache_demo
 
 Demo 会展示：
 
-1. 策略推荐。
-2. 配置文件驱动装配。
-3. 典型缓存访问流程。
+1. LRU/LFU/ARC 基础策略行为。
+2. CacheWithLoader 自动回源流程。
+3. TTL 过期语义与组合缓存流程。
 
 
 

@@ -1,6 +1,4 @@
 #include <chrono>
-#include <filesystem>
-#include <fstream>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -9,15 +7,12 @@
 #include <gtest/gtest.h>
 
 #include "ArcCache.h"
-#include "CacheManager.h"
 #include "CacheWithLoader.h"
 #include "LfuCache.h"
 #include "LruCache.h"
-#include "RuntimeConfig.h"
-#include "StrategySelector.h"
 #include "TtlCache.h"
 
-// CacheSys端到端测试集合：覆盖LRU/LFU/ARC、TTL、自动回源、管理器、策略选择与运行时配置
+// CacheSys端到端测试集合：覆盖LRU/LFU/ARC、TTL与自动回源
 namespace
 {
     // ========== LRU 统计与基础行为 ==========
@@ -264,140 +259,4 @@ namespace
             std::invalid_argument);
     }
 
-    // ========== CacheManager ==========
-
-    // 验证创建、获取、统计与删除流程
-    TEST(CacheManagerSystemTest, CreateGetAndRemoveCaches)
-    {
-        CacheSys::CacheManager manager;
-
-        manager.createCache<int, std::string>("users", CacheSys::CacheManager::PolicyType::LRU, 3);
-        manager.createCache<int, std::string>("orders", CacheSys::CacheManager::PolicyType::LFU, 3);
-        manager.createCache<int, std::string>("events", CacheSys::CacheManager::PolicyType::ARC, 3);
-
-        EXPECT_TRUE(manager.hasCache("users"));
-        EXPECT_TRUE(manager.hasCache("orders"));
-        EXPECT_TRUE(manager.hasCache("events"));
-
-        auto users = manager.getCache<int, std::string>("users");
-        std::string value;
-        users->put(1, "Alice");
-        EXPECT_TRUE(users->get(1, value));
-        EXPECT_EQ(value, "Alice");
-
-        auto allStats = manager.getAllStats();
-        EXPECT_EQ(allStats.size(), 3U);
-
-        manager.removeCache("orders");
-        EXPECT_FALSE(manager.hasCache("orders"));
-    }
-
-    // 验证重复名称创建会抛异常
-    TEST(CacheManagerValidationTest, DuplicateNameThrows)
-    {
-        CacheSys::CacheManager manager;
-        manager.createCache<int, std::string>("same", CacheSys::CacheManager::PolicyType::LRU, 2);
-        EXPECT_THROW(
-            (manager.createCache<int, std::string>("same", CacheSys::CacheManager::PolicyType::LFU, 2)),
-            std::runtime_error);
-    }
-
-    // 验证非法容量会抛异常
-    TEST(CacheManagerValidationTest, InvalidCapacityThrows)
-    {
-        CacheSys::CacheManager manager;
-        EXPECT_THROW(
-            (manager.createCache<int, std::string>("bad", CacheSys::CacheManager::PolicyType::ARC, -1)),
-            std::invalid_argument);
-    }
-
-    // ========== StrategySelector ==========
-
-    // 写多且热点变化大 -> 推荐LRU
-    TEST(StrategySelectorTest, RecommendsLruForWriteHeavy)
-    {
-        auto rec = CacheSys::StrategySelector::recommend(64, 0.8, 0.2);
-        EXPECT_EQ(rec.policy, CacheSys::CacheManager::PolicyType::LRU);
-        EXPECT_EQ(rec.policyName, "LRU");
-        EXPECT_FALSE(rec.reason.empty());
-    }
-
-    // 读多且热点稳定 -> 推荐LFU
-    TEST(StrategySelectorTest, RecommendsLfuForStableReadHeavy)
-    {
-        auto rec = CacheSys::StrategySelector::recommend(256, 0.2, 0.9);
-        EXPECT_EQ(rec.policy, CacheSys::CacheManager::PolicyType::LFU);
-        EXPECT_EQ(rec.policyName, "LFU");
-    }
-
-    // 混合场景 -> 推荐ARC
-    TEST(StrategySelectorTest, RecommendsArcForMixed)
-    {
-        auto rec = CacheSys::StrategySelector::recommend(128, 0.45, 0.55);
-        EXPECT_EQ(rec.policy, CacheSys::CacheManager::PolicyType::ARC);
-        EXPECT_EQ(rec.policyName, "ARC");
-    }
-
-    // ========== RuntimeConfig ==========
-
-    // 验证配置解析、自动装配与基础功能联调
-    TEST(RuntimeConfigTest, ParseAndAssembleFromFile)
-    {
-        namespace fs = std::filesystem;
-
-        const fs::path configPath = fs::temp_directory_path() / "cachesys_runtime_test.conf"; // 临时配置文件路径
-        {
-            std::ofstream ofs(configPath.string());
-            ASSERT_TRUE(ofs.good());
-            ofs << "cache name=user-profile policy=LRU capacity=8 ttl_ms=0 loader=on\n";
-            ofs << "cache name=session-store policy=ARC capacity=16 ttl_ms=50 loader=off\n";
-        }
-
-        auto cfg = CacheSys::RuntimeConfig::loadFromFile(configPath.string());
-        ASSERT_EQ(cfg.instances.size(), 2U);
-        EXPECT_EQ(cfg.instances[0].name, "user-profile");
-        EXPECT_EQ(cfg.instances[1].policy, CacheSys::CacheManager::PolicyType::ARC);
-
-        CacheSys::RuntimeAssembler::LoaderRegistry loaders;
-        loaders["user-profile"] = [](const std::string &key)
-        {
-            return std::string("USER<") + key + ">";
-        };
-
-        auto caches = CacheSys::RuntimeAssembler::build(cfg, loaders);
-        ASSERT_EQ(caches.size(), 2U);
-
-        std::string value;
-        bool first = caches.at("user-profile")->get("u1", value);
-        bool second = caches.at("user-profile")->get("u1", value);
-        EXPECT_FALSE(first);
-        EXPECT_TRUE(second);
-        EXPECT_EQ(value, "USER<u1>");
-
-        caches.at("session-store")->put("s1", "session");
-        EXPECT_TRUE(caches.at("session-store")->get("s1", value));
-        std::this_thread::sleep_for(std::chrono::milliseconds(70));
-        EXPECT_FALSE(caches.at("session-store")->get("s1", value));
-
-        std::error_code ec; // 清理临时文件
-        fs::remove(configPath, ec);
-    }
-
-    // 验证非法配置会抛出异常
-    TEST(RuntimeConfigTest, InvalidConfigThrows)
-    {
-        namespace fs = std::filesystem;
-
-        const fs::path badPath = fs::temp_directory_path() / "cachesys_runtime_bad.conf";
-        {
-            std::ofstream ofs(badPath.string());
-            ASSERT_TRUE(ofs.good());
-            ofs << "cache name=bad policy=UNKNOWN capacity=8 ttl_ms=0 loader=off\n";
-        }
-
-        EXPECT_THROW((CacheSys::RuntimeConfig::loadFromFile(badPath.string())), std::runtime_error);
-
-        std::error_code ec; // 清理临时文件
-        fs::remove(badPath, ec);
-    }
 }
