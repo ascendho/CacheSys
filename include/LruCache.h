@@ -225,5 +225,4 @@ namespace CacheSys
     using HashLruCaches = ShardedLruCache<Key, Value>;
 }
 
-// 包含模板类的具体实现
 #include "../src/LruCache.tpp"

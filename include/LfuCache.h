@@ -162,5 +162,4 @@ namespace CacheSys
     using HashLfuCache = ShardedLfuCache<Key, Value>;
 }
 
-// 包含具体实现
 #include "../src/LfuCache.tpp"
